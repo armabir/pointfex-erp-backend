@@ -12,6 +12,7 @@ async function bootstrap() {
     : [
         'http://localhost:5173',
         'http://127.0.0.1:5173',
+        'https://pointfex-erp-frontend.vercel.app',
         'https://pointfex-erp.armabir1.workers.dev',
       ]
 

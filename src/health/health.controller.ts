@@ -28,7 +28,13 @@ export class HealthController {
         status: dbStatus,
         latencyMs: dbLatencyMs,
       },
-      corsAllowedOrigins: process.env.CORS_ORIGIN || 'default (localhost, vercel.app)',
+      corsAllowedOrigins: process.env.CORS_ORIGIN
+        ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+        : [
+            'https://pointfex-erp-frontend.vercel.app',
+            'https://pointfex-erp.armabir1.workers.dev',
+            'http://localhost:5173',
+          ],
       version: '1.0.0',
     }
   }
