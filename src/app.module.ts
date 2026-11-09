@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common'
 import { ConfigModule } from '@nestjs/config'
 import { CommonModule } from './common/common.module'
+import { AppController } from './app.controller'
 import { HealthController } from './health/health.controller'
 import { EmployeesModule } from './employees/employees.module'
 import { PositionsModule } from './positions/positions.module'
@@ -35,7 +36,7 @@ import { GovernanceModule } from './governance/governance.module'
     ConsultancyModule,
     GovernanceModule,
   ],
-  controllers: [HealthController],
+  controllers: [AppController, HealthController],
 })
 export class AppModule {}
 

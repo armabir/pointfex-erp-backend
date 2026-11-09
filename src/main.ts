@@ -60,8 +60,10 @@ async function bootstrap() {
     optionsSuccessStatus: 204,
   })
 
-  // Global API Prefix
-  app.setGlobalPrefix('api')
+  // Global API Prefix (except root landing /)
+  app.setGlobalPrefix('api', {
+    exclude: ['/'],
+  })
 
   // Global DTO Validation & Transformation Pipe
   app.useGlobalPipes(
