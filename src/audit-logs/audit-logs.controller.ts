@@ -1,29 +1,30 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common'
 import { AuditLogsService } from './audit-logs.service'
-import { DemoIdentityGuard } from '../common/demo-identity.guard'
-import { RolesGuard } from '../common/roles.guard'
-import { Roles } from '../common/roles.decorator'
+import { AuthenticatedUser } from '../common/auth-user.interface'
+import { PermissionsGuard } from '../common/permissions.guard'
+import { RequireAnyPermission } from '../common/require-permissions.decorator'
+import { CurrentUser } from '../common/current-user.decorator'
 
 @Controller('audit-logs')
-@UseGuards(DemoIdentityGuard, RolesGuard)
+@UseGuards(PermissionsGuard)
 export class AuditLogsController {
   constructor(private readonly auditLogsService: AuditLogsService) {}
 
   @Get()
-  @Roles('cto', 'cfo', 'chro', 'ceo')
+  @RequireAnyPermission('audit_logs:read', 'audit_logs:read_confidential')
   findAll(
     @Query('category') category?: string,
     @Query('severity') severity?: string,
     @Query('actorId') actorId?: string,
     @Query('search') search?: string,
+    @CurrentUser() actor?: AuthenticatedUser,
   ) {
-    return this.auditLogsService.findAll({ category, severity, actorId, search })
+    return this.auditLogsService.findAll({ category, severity, actorId, search }, actor)
   }
 
   @Get(':id')
-  @Roles('cto', 'cfo', 'chro', 'ceo')
-  findOne(@Param('id') id: string) {
-    return this.auditLogsService.findOne(id)
+  @RequireAnyPermission('audit_logs:read', 'audit_logs:read_confidential')
+  findOne(@Param('id') id: string, @CurrentUser() actor?: AuthenticatedUser) {
+    return this.auditLogsService.findOne(id, actor)
   }
 }
-

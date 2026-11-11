@@ -1,3 +1,4 @@
+import { getCurrentRequestIp } from '../common/ip-address.util'
 import {
   Injectable,
   NotFoundException,
@@ -15,7 +16,7 @@ import {
   AddTaskCommentDto,
 } from './dto/task.dto'
 import { Prisma } from '@prisma/client'
-import { DemoUser } from '../common/demo-identity.guard'
+import { AuthenticatedUser } from '../common/auth-user.interface'
 
 @Injectable()
 export class TasksService {
@@ -91,7 +92,7 @@ export class TasksService {
     return task
   }
 
-  async create(dto: CreateTaskDto, actor: DemoUser) {
+  async create(dto: CreateTaskDto, actor: AuthenticatedUser) {
     const project = await this.prisma.project.findUnique({ where: { id: dto.projectId } })
     if (!project) throw new NotFoundException(`Project "${dto.projectId}" not found`)
 
@@ -113,7 +114,9 @@ export class TasksService {
           status: 'todo',
           priority: dto.priority || 'medium',
           dueDate: dto.dueDate ? new Date(dto.dueDate) : new Date(Date.now() + 7 * 86400000),
-          estimatedHours: dto.estimatedHours ? new Prisma.Decimal(dto.estimatedHours) : new Prisma.Decimal(8),
+          estimatedHours: dto.estimatedHours
+            ? new Prisma.Decimal(dto.estimatedHours)
+            : new Prisma.Decimal(8),
           loggedHours: new Prisma.Decimal(0),
           tags: dto.tags || [],
           checklist: dto.checklist
@@ -136,6 +139,7 @@ export class TasksService {
       // Log Audit
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -156,13 +160,14 @@ export class TasksService {
     })
   }
 
-  async updateStatus(id: string, dto: UpdateTaskStatusDto, actor: DemoUser) {
+  async updateStatus(id: string, dto: UpdateTaskStatusDto, actor: AuthenticatedUser) {
     const task = await this.findOne(id)
 
-    // Permission constraint: Regular developers cannot mark tasks as Completed
-    if (actor.role === 'developer' && dto.status === 'completed') {
+    // Permission constraint: Regular developers cannot mark tasks as Completed unless delegated tasks:approve
+    const canComplete = actor.permissions?.includes('tasks:approve') || actor.role !== 'developer'
+    if (!canComplete && dto.status === 'completed') {
       throw new ForbiddenException(
-        'Permission denied: Only Project Managers (PM), CTO, or CEO can mark tasks as Completed',
+        'Permission denied: Only Project Managers (PM), CTO, CEO, or delegated approvers can mark tasks as Completed',
       )
     }
 
@@ -179,6 +184,7 @@ export class TasksService {
     // Log Activity
     await this.prisma.auditLog.create({
       data: {
+        ipAddress: getCurrentRequestIp(),
         actorId: actor.id,
         actorName: actor.id,
         actorEmail: `${actor.id}@pointfex.internal`,
@@ -198,8 +204,11 @@ export class TasksService {
     return updatedTask
   }
 
-  async approve(id: string, dto: ApproveTaskDto, actor: DemoUser) {
+  async approve(id: string, dto: ApproveTaskDto, actor: AuthenticatedUser) {
     const task = await this.findOne(id)
+    if (task.status === 'completed') {
+      throw new BadRequestException(`Task "${id}" is already completed`)
+    }
 
     return this.prisma.$transaction(async (tx) => {
       // 1. Mark task completed
@@ -225,7 +234,8 @@ export class TasksService {
       }
 
       // 3. Check for deliverable payout (milestone payout or specified payout)
-      const payout = dto.payoutAmount || (task.milestone?.payoutAmount ? Number(task.milestone.payoutAmount) : 0)
+      const payout =
+        dto.payoutAmount || (task.milestone?.payoutAmount ? Number(task.milestone.payoutAmount) : 0)
 
       if (payout > 0) {
         // Prevent duplicate payout for same task approval
@@ -241,7 +251,7 @@ export class TasksService {
           const payoutDecimal = new Prisma.Decimal(payout)
 
           // Update developer wallet
-          await tx.employeeWallet.upsert({
+          const updatedWallet = await tx.employeeWallet.upsert({
             where: { employeeId: task.assigneeId },
             update: {
               balance: { increment: payoutDecimal },
@@ -261,6 +271,7 @@ export class TasksService {
           // Record in double-entry transaction ledger
           await tx.financialTransaction.create({
             data: {
+              walletId: updatedWallet?.id,
               employeeId: task.assigneeId,
               projectId: task.projectId,
               milestoneId: task.milestoneId || undefined,
@@ -284,6 +295,7 @@ export class TasksService {
       // Audit Log
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -304,7 +316,7 @@ export class TasksService {
     })
   }
 
-  async reject(id: string, dto: RejectTaskDto, actor: DemoUser) {
+  async reject(id: string, dto: RejectTaskDto, actor: AuthenticatedUser) {
     const task = await this.findOne(id)
 
     return this.prisma.$transaction(async (tx) => {
@@ -326,6 +338,7 @@ export class TasksService {
       // Audit Log
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -346,7 +359,7 @@ export class TasksService {
     })
   }
 
-  async reassign(id: string, dto: ReassignTaskDto, actor: DemoUser) {
+  async reassign(id: string, dto: ReassignTaskDto, actor: AuthenticatedUser) {
     const task = await this.findOne(id)
     const newDev = await this.prisma.employee.findUnique({ where: { id: dto.newAssigneeId } })
     if (!newDev) throw new NotFoundException(`Developer "${dto.newAssigneeId}" not found`)
@@ -360,6 +373,7 @@ export class TasksService {
 
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -384,7 +398,8 @@ export class TasksService {
     const item = await this.prisma.taskChecklistItem.findFirst({
       where: { id: itemId, taskId },
     })
-    if (!item) throw new NotFoundException(`Checklist item "${itemId}" not found for task "${taskId}"`)
+    if (!item)
+      throw new NotFoundException(`Checklist item "${itemId}" not found for task "${taskId}"`)
 
     const newCompleted = completed !== undefined ? completed : !item.completed
 
@@ -394,7 +409,7 @@ export class TasksService {
     })
   }
 
-  async submitWork(taskId: string, dto: SubmitTaskWorkDto, actor: DemoUser) {
+  async submitWork(taskId: string, dto: SubmitTaskWorkDto, actor: AuthenticatedUser) {
     await this.findOne(taskId)
 
     return this.prisma.taskSubmission.create({
@@ -412,7 +427,7 @@ export class TasksService {
     })
   }
 
-  async addComment(taskId: string, dto: AddTaskCommentDto, actor: DemoUser) {
+  async addComment(taskId: string, dto: AddTaskCommentDto, actor: AuthenticatedUser) {
     await this.findOne(taskId)
 
     return this.prisma.taskComment.create({
@@ -427,4 +442,3 @@ export class TasksService {
     })
   }
 }
-

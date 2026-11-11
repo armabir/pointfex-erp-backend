@@ -22,10 +22,7 @@ describe('ReportsService - Whistleblower Confidentiality & Cross-Role Escalation
     }
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        ReportsService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [ReportsService, { provide: PrismaService, useValue: prisma }],
     }).compile()
 
     service = module.get<ReportsService>(ReportsService)
@@ -59,9 +56,7 @@ describe('ReportsService - Whistleblower Confidentiality & Cross-Role Escalation
     })
 
     it('should allow CHRO and CEO to query confidential grievances', async () => {
-      prisma.report.findMany.mockResolvedValue([
-        { id: 'rep_conf_01', isConfidential: true },
-      ])
+      prisma.report.findMany.mockResolvedValue([{ id: 'rep_conf_01', isConfidential: true }])
 
       // CHRO queries
       await service.findAll({ isConfidential: true }, { id: 'emp_chro_01', role: 'chro' })
@@ -95,9 +90,9 @@ describe('ReportsService - Whistleblower Confidentiality & Cross-Role Escalation
       })
 
       // PM attempts to read confidential grievance
-      await expect(
-        service.findOne('rep_conf_01', { id: 'emp_pm_01', role: 'pm' }),
-      ).rejects.toThrow(ForbiddenException)
+      await expect(service.findOne('rep_conf_01', { id: 'emp_pm_01', role: 'pm' })).rejects.toThrow(
+        ForbiddenException,
+      )
     })
   })
 
@@ -135,4 +130,3 @@ describe('ReportsService - Whistleblower Confidentiality & Cross-Role Escalation
     })
   })
 })
-

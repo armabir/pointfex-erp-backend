@@ -79,4 +79,3 @@ export class AdjudicateConfidentialGrievanceDto {
   @IsString()
   mediationNotes: string
 }
-

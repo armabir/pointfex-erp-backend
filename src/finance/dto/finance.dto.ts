@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString, IsNumber, Min } from 'class-validator'
+import { IsNotEmpty, IsOptional, IsString, IsNumber, IsIn, Min } from 'class-validator'
 
 export class AllocateDeveloperBudgetDto {
   @IsNotEmpty()
@@ -82,6 +82,7 @@ export class IssueFinancialAdjustmentDto {
 
   @IsNotEmpty()
   @IsString()
+  @IsIn(['bonus', 'penalty'])
   type: 'bonus' | 'penalty'
 
   @IsNotEmpty({ message: 'Reason is required for financial adjustments' })
@@ -107,4 +108,3 @@ export class ClientRevenueShareDto {
   @IsString()
   notes?: string
 }
-

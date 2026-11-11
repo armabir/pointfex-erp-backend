@@ -1,8 +1,9 @@
+import { getCurrentRequestIp } from '../common/ip-address.util'
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../common/prisma.service'
 import { CreateConsultancyDto, UpdateConsultancyDto } from './dto/consultancy.dto'
 import { Prisma } from '@prisma/client'
-import { DemoUser } from '../common/demo-identity.guard'
+import { AuthenticatedUser } from '../common/auth-user.interface'
 
 @Injectable()
 export class ConsultancyService {
@@ -42,7 +43,7 @@ export class ConsultancyService {
     return req
   }
 
-  async create(dto: CreateConsultancyDto, actor: DemoUser) {
+  async create(dto: CreateConsultancyDto, actor: AuthenticatedUser) {
     const id = `cst_${Date.now()}`
 
     return this.prisma.$transaction(async (tx) => {
@@ -66,6 +67,7 @@ export class ConsultancyService {
 
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -86,7 +88,7 @@ export class ConsultancyService {
     })
   }
 
-  async update(id: string, dto: UpdateConsultancyDto, actor: DemoUser) {
+  async update(id: string, dto: UpdateConsultancyDto, actor: AuthenticatedUser) {
     const existing = await this.findOne(id)
 
     return this.prisma.$transaction(async (tx) => {
@@ -106,6 +108,7 @@ export class ConsultancyService {
 
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -126,4 +129,3 @@ export class ConsultancyService {
     })
   }
 }
-

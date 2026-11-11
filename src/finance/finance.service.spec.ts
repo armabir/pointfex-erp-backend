@@ -41,10 +41,7 @@ describe('FinanceService - Financial Constraints & Ledger Integrity', () => {
     }
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        FinanceService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [FinanceService, { provide: PrismaService, useValue: prisma }],
     }).compile()
 
     service = module.get<FinanceService>(FinanceService)
@@ -209,4 +206,3 @@ describe('FinanceService - Financial Constraints & Ledger Integrity', () => {
     })
   })
 })
-

@@ -18,10 +18,12 @@ model Employee {
   id           String   @id
   name         String
   email        String   @unique
+  passwordHash String   @default("")
   title        String
   initials     String
   avatarUrl    String?
   status       String   @default("online") // 'online' | 'offline' | 'away'
+  isSuspended  Boolean  @default(false)
   skills       String[]
   timezone     String?  @default("UTC+6 (BST)")
   github       String?
@@ -46,6 +48,12 @@ model Employee {
   auditLogs            AuditLog[]
   requestedConsultancy ConsultancyRequest[] @relation("ConsultancyRequester")
   assignedConsultancy  ConsultancyRequest[] @relation("ConsultancyAdvisor")
+  employeeRoles        EmployeeRole[]
+  employeePermissions  EmployeePermission[]
+  requestedAccessChanges AccessChangeRequest[] @relation("AccessRequestRequester")
+  targetedAccessChanges  AccessChangeRequest[] @relation("AccessRequestTarget")
+  approvedAccessChanges  AccessChangeRequest[] @relation("AccessRequestApprover")
+  refreshTokens          RefreshToken[]
 
   @@map("employees")
 }
@@ -453,6 +461,7 @@ model AuditLog {
   description String
   category    String   // 'task' | 'finance' | 'security' | 'people' | 'team' | 'git' | 'governance'
   badgeColor  String?
+  ipAddress   String?
   payload     Json?
   timestamp   DateTime @default(now())
 
@@ -613,5 +622,148 @@ model Notification {
 
   @@index([userId])
   @@map("notifications")
+}
+
+// --------------------------------------------------------------------------
+// 10. DYNAMIC PERMISSION-BASED ACCESS CONTROL (PBAC / RBAC)
+// --------------------------------------------------------------------------
+
+model Permission {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  resource    String
+  action      String
+  module      String
+  description String
+  isSensitive Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rolePermissions     RolePermission[]
+  employeePermissions EmployeePermission[]
+
+  @@unique([resource, action])
+  @@index([resource])
+  @@index([module])
+  @@map("permissions")
+}
+
+model Role {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  name            String   @unique
+  description     String?
+  isSystemDefault Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  rolePermissions     RolePermission[]
+  employeeRoles       EmployeeRole[]
+  accessChangeRequests AccessChangeRequest[]
+
+  @@index([isActive])
+  @@map("roles")
+}
+
+model RolePermission {
+  id           String   @id @default(cuid())
+  roleId       String
+  permissionId String
+  grantedById  String?
+  grantedAt    DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model EmployeeRole {
+  id           String    @id @default(cuid())
+  employeeId   String
+  roleId       String
+  assignedById String?
+  assignedAt   DateTime  @default(now())
+  expiresAt    DateTime?
+  isActive     Boolean   @default(true)
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  role     Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, roleId])
+  @@index([employeeId, isActive])
+  @@index([roleId, isActive])
+  @@map("employee_roles")
+}
+
+model EmployeePermission {
+  id           String    @id @default(cuid())
+  employeeId   String
+  permissionId String
+  grantedById  String?
+  reason       String?
+  grantedAt    DateTime  @default(now())
+  expiresAt    DateTime?
+  isActive     Boolean   @default(true)
+
+  employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, permissionId])
+  @@index([employeeId, isActive])
+  @@index([permissionId, isActive])
+  @@map("employee_permissions")
+}
+
+enum AccessRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model AccessChangeRequest {
+  id               String              @id @default(cuid())
+  requesterId      String
+  targetEmployeeId String
+  requestedRoleId  String
+  status           AccessRequestStatus @default(PENDING)
+  reason           String?
+  approvedById     String?
+  reviewedAt       DateTime?
+  reviewNotes      String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  requester      Employee  @relation("AccessRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  targetEmployee Employee  @relation("AccessRequestTarget", fields: [targetEmployeeId], references: [id], onDelete: Cascade)
+  requestedRole  Role      @relation(fields: [requestedRoleId], references: [id], onDelete: Cascade)
+  approvedBy     Employee? @relation("AccessRequestApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([targetEmployeeId, status])
+  @@index([status])
+  @@map("access_change_requests")
+}
+
+model RefreshToken {
+  id                  String    @id @default(cuid())
+  employeeId          String
+  tokenHash           String    @unique
+  familyId            String
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  replacedByTokenHash String?
+  ipAddress           String?
+  userAgent           String?
+  createdAt           DateTime  @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([familyId])
+  @@map("refresh_tokens")
 }
 

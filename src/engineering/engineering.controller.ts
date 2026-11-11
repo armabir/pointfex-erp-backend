@@ -1,16 +1,13 @@
 import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards } from '@nestjs/common'
 import { EngineeringService } from './engineering.service'
-import {
-  CreateSecurityAlertDto,
-  UpdateSecurityAlertStatusDto,
-} from './dto/engineering.dto'
-import { DemoIdentityGuard, DemoUser } from '../common/demo-identity.guard'
-import { RolesGuard } from '../common/roles.guard'
-import { Roles } from '../common/roles.decorator'
+import { CreateSecurityAlertDto, UpdateSecurityAlertStatusDto } from './dto/engineering.dto'
+import { AuthenticatedUser } from '../common/auth-user.interface'
+import { PermissionsGuard } from '../common/permissions.guard'
+import { RequirePermissions } from '../common/require-permissions.decorator'
 import { CurrentUser } from '../common/current-user.decorator'
 
 @Controller('engineering')
-@UseGuards(DemoIdentityGuard, RolesGuard)
+@UseGuards(PermissionsGuard)
 export class EngineeringController {
   constructor(private readonly engineeringService: EngineeringService) {}
 
@@ -34,20 +31,20 @@ export class EngineeringController {
   }
 
   @Post('security-alerts')
-  @Roles('cto', 'pm', 'ceo')
+  @RequirePermissions('security_alerts:create')
   createSecurityAlert(
     @Body() dto: CreateSecurityAlertDto,
-    @CurrentUser() actor: DemoUser,
+    @CurrentUser() actor: AuthenticatedUser,
   ) {
     return this.engineeringService.createSecurityAlert(dto, actor)
   }
 
   @Patch('security-alerts/:id/status')
-  @Roles('cto', 'pm', 'ceo')
+  @RequirePermissions('security_alerts:update_status')
   updateSecurityAlertStatus(
     @Param('id') id: string,
     @Body() dto: UpdateSecurityAlertStatusDto,
-    @CurrentUser() actor: DemoUser,
+    @CurrentUser() actor: AuthenticatedUser,
   ) {
     return this.engineeringService.updateSecurityAlertStatus(id, dto, actor)
   }
@@ -57,4 +54,3 @@ export class EngineeringController {
     return this.engineeringService.getTestRuns(projectId)
   }
 }
-

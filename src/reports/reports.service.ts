@@ -1,8 +1,5 @@
-import {
-  Injectable,
-  NotFoundException,
-  ForbiddenException,
-} from '@nestjs/common'
+import { getCurrentRequestIp } from '../common/ip-address.util'
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common'
 import { PrismaService } from '../common/prisma.service'
 import {
   CreateReportDto,
@@ -10,7 +7,7 @@ import {
   ForwardReportDto,
   AdjudicateConfidentialGrievanceDto,
 } from './dto/report.dto'
-import { DemoUser } from '../common/demo-identity.guard'
+import { AuthenticatedUser } from '../common/auth-user.interface'
 
 @Injectable()
 export class ReportsService {
@@ -24,9 +21,12 @@ export class ReportsService {
       teamId?: string
       isConfidential?: boolean
     },
-    actor: DemoUser,
+    actor: AuthenticatedUser,
   ) {
-    const isChroOrCeo = actor.role === 'chro' || actor.role === 'ceo'
+    const isChroOrCeo =
+      actor.permissions?.includes('grievances:read_confidential') ||
+      actor.role === 'chro' ||
+      actor.role === 'ceo'
     const where: any = {}
 
     if (filters.type) where.type = filters.type
@@ -38,6 +38,7 @@ export class ReportsService {
     // If actor is NOT CHRO or CEO, confidential reports must never be returned!
     if (!isChroOrCeo) {
       where.isConfidential = false
+      where.confidentialTo = null
     } else if (filters.isConfidential !== undefined) {
       where.isConfidential = filters.isConfidential
     }
@@ -53,7 +54,7 @@ export class ReportsService {
     })
   }
 
-  async findOne(id: string, actor: DemoUser) {
+  async findOne(id: string, actor: AuthenticatedUser) {
     const report = await this.prisma.report.findUnique({
       where: { id },
       include: {
@@ -67,11 +68,15 @@ export class ReportsService {
       throw new NotFoundException(`Report with ID "${id}" not found`)
     }
 
-    const isChroOrCeo = actor.role === 'chro' || actor.role === 'ceo'
+    const isChroOrCeo =
+      actor.permissions?.includes('grievances:read_confidential') ||
+      actor.role === 'chro' ||
+      actor.role === 'ceo'
     const isAuthor = report.authorId === actor.id
+    const isRestricted = report.isConfidential || Boolean(report.confidentialTo)
 
     // Confidentiality check:
-    if (report.isConfidential && !isChroOrCeo && !isAuthor) {
+    if (isRestricted && !isChroOrCeo && !isAuthor) {
       throw new ForbiddenException(
         'Access denied: Confidential grievance is restricted to CHRO and CEO',
       )
@@ -80,7 +85,7 @@ export class ReportsService {
     return report
   }
 
-  async create(dto: CreateReportDto, actor: DemoUser) {
+  async create(dto: CreateReportDto, actor: AuthenticatedUser) {
     const reportId = `rep_${Date.now()}`
 
     return this.prisma.$transaction(async (tx) => {
@@ -111,6 +116,7 @@ export class ReportsService {
       // Audit Log
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -131,7 +137,7 @@ export class ReportsService {
     })
   }
 
-  async updateStatus(id: string, dto: UpdateReportStatusDto, actor: DemoUser) {
+  async updateStatus(id: string, dto: UpdateReportStatusDto, actor: AuthenticatedUser) {
     const report = await this.findOne(id, actor)
 
     return this.prisma.$transaction(async (tx) => {
@@ -139,13 +145,17 @@ export class ReportsService {
         where: { id },
         data: {
           status: dto.status,
-          feedback: dto.feedback ? `[${actor.role.toUpperCase()} Note]: ${dto.feedback}` : report.feedback,
-          resolvedAt: dto.status === 'resolved' || dto.status === 'dismissed' ? new Date() : undefined,
+          feedback: dto.feedback
+            ? `[${actor.role.toUpperCase()} Note]: ${dto.feedback}`
+            : report.feedback,
+          resolvedAt:
+            dto.status === 'resolved' || dto.status === 'dismissed' ? new Date() : undefined,
         },
       })
 
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -166,7 +176,7 @@ export class ReportsService {
     })
   }
 
-  async forwardToCLevel(id: string, dto: ForwardReportDto, actor: DemoUser) {
+  async forwardToCLevel(id: string, dto: ForwardReportDto, actor: AuthenticatedUser) {
     const report = await this.findOne(id, actor)
 
     return this.prisma.$transaction(async (tx) => {
@@ -184,6 +194,7 @@ export class ReportsService {
 
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -204,9 +215,16 @@ export class ReportsService {
     })
   }
 
-  async adjudicateConfidential(id: string, dto: AdjudicateConfidentialGrievanceDto, actor: DemoUser) {
-    // Only CHRO or CEO can call this
-    if (actor.role !== 'chro' && actor.role !== 'ceo') {
+  async adjudicateConfidential(
+    id: string,
+    dto: AdjudicateConfidentialGrievanceDto,
+    actor: AuthenticatedUser,
+  ) {
+    const canAdjudicate =
+      actor.permissions?.includes('grievances:adjudicate_confidential') ||
+      actor.role === 'chro' ||
+      actor.role === 'ceo'
+    if (!canAdjudicate) {
       throw new ForbiddenException('Only CHRO or CEO can adjudicate confidential grievances')
     }
 
@@ -219,12 +237,14 @@ export class ReportsService {
         data: {
           status: dto.status,
           mediationNotes: dto.mediationNotes,
-          resolvedAt: dto.status === 'resolved' || dto.status === 'dismissed' ? new Date() : undefined,
+          resolvedAt:
+            dto.status === 'resolved' || dto.status === 'dismissed' ? new Date() : undefined,
         },
       })
 
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -245,4 +265,3 @@ export class ReportsService {
     })
   }
 }
-

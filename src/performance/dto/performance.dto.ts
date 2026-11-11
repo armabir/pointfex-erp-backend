@@ -63,4 +63,3 @@ export class IssueDisciplinaryDto {
   @IsNumber()
   penaltyAmount?: number
 }
-

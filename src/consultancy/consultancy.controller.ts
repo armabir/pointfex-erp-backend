@@ -1,13 +1,13 @@
 import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards } from '@nestjs/common'
 import { ConsultancyService } from './consultancy.service'
 import { CreateConsultancyDto, UpdateConsultancyDto } from './dto/consultancy.dto'
-import { DemoIdentityGuard, DemoUser } from '../common/demo-identity.guard'
-import { RolesGuard } from '../common/roles.guard'
-import { Roles } from '../common/roles.decorator'
+import { AuthenticatedUser } from '../common/auth-user.interface'
+import { PermissionsGuard } from '../common/permissions.guard'
+import { RequirePermissions } from '../common/require-permissions.decorator'
 import { CurrentUser } from '../common/current-user.decorator'
 
 @Controller('consultancy')
-@UseGuards(DemoIdentityGuard, RolesGuard)
+@UseGuards(PermissionsGuard)
 export class ConsultancyController {
   constructor(private readonly consultancyService: ConsultancyService) {}
 
@@ -26,18 +26,17 @@ export class ConsultancyController {
   }
 
   @Post()
-  create(@Body() dto: CreateConsultancyDto, @CurrentUser() actor: DemoUser) {
+  create(@Body() dto: CreateConsultancyDto, @CurrentUser() actor: AuthenticatedUser) {
     return this.consultancyService.create(dto, actor)
   }
 
   @Patch(':id')
-  @Roles('cto', 'ceo')
+  @RequirePermissions('consultancy:manage')
   update(
     @Param('id') id: string,
     @Body() dto: UpdateConsultancyDto,
-    @CurrentUser() actor: DemoUser,
+    @CurrentUser() actor: AuthenticatedUser,
   ) {
     return this.consultancyService.update(id, dto, actor)
   }
 }
-

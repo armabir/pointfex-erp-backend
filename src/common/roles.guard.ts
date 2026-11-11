@@ -1,7 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import { ROLES_KEY } from './roles.decorator'
-import { DemoUser } from './demo-identity.guard'
+import { AuthenticatedUser } from './auth-user.interface'
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -18,15 +18,16 @@ export class RolesGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest()
-    const user = request.user as DemoUser
+    const user = request.user as AuthenticatedUser
 
     if (!user || !user.role) {
-      throw new ForbiddenException('Access denied: Demo identity required')
+      throw new ForbiddenException('Access denied: Authenticated user identity required')
     }
 
     // Role check: 'ceo' typically has full override capability
     const roleNormalized = user.role.toLowerCase()
-    const hasRole = requiredRoles.map((r) => r.toLowerCase()).includes(roleNormalized) || roleNormalized === 'ceo'
+    const hasRole =
+      requiredRoles.map((r) => r.toLowerCase()).includes(roleNormalized) || roleNormalized === 'ceo'
 
     if (!hasRole) {
       throw new ForbiddenException(
@@ -37,4 +38,3 @@ export class RolesGuard implements CanActivate {
     return true
   }
 }
-

@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { getCurrentRequestIp } from '../common/ip-address.util'
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../common/prisma.service'
 import {
   RecordEvaluationDto,
@@ -6,7 +7,7 @@ import {
   IssueDisciplinaryDto,
 } from './dto/performance.dto'
 import { Prisma } from '@prisma/client'
-import { DemoUser } from '../common/demo-identity.guard'
+import { AuthenticatedUser } from '../common/auth-user.interface'
 import { FinanceService } from '../finance/finance.service'
 
 @Injectable()
@@ -16,8 +17,42 @@ export class PerformanceService {
     private financeService: FinanceService,
   ) {}
 
-  async findAll() {
+  async findAll(actor?: AuthenticatedUser) {
+    const canReadAll =
+      !actor ||
+      actor.permissions?.includes('performance:read_all') ||
+      ['chro', 'cpo', 'ceo', 'cto', 'cfo'].includes(actor.role.toLowerCase())
+
+    let where: Prisma.PerformanceRecordWhereInput = {}
+
+    if (!canReadAll && actor) {
+      const canReadTeam =
+        actor.permissions?.includes('performance:read_team') || actor.role.toLowerCase() === 'pm'
+      if (canReadTeam) {
+        const managedTeams = await this.prisma.team.findMany({
+          where: {
+            pmPosition: {
+              assignments: { some: { employeeId: actor.id, isActive: true } },
+            },
+          },
+          select: {
+            memberships: { where: { isActive: true }, select: { employeeId: true } },
+          },
+        })
+        const teamEmpIds = Array.from(
+          new Set([
+            actor.id,
+            ...managedTeams.flatMap((t) => t.memberships.map((m) => m.employeeId)),
+          ]),
+        )
+        where = { employeeId: { in: teamEmpIds } }
+      } else {
+        where = { employeeId: actor.id }
+      }
+    }
+
     return this.prisma.performanceRecord.findMany({
+      where,
       include: {
         employee: {
           include: {
@@ -36,7 +71,19 @@ export class PerformanceService {
     })
   }
 
-  async findOne(employeeId: string) {
+  async findOne(employeeId: string, actor?: AuthenticatedUser) {
+    if (actor && employeeId !== actor.id) {
+      const canReadAll =
+        actor.permissions?.includes('performance:read_all') ||
+        actor.permissions?.includes('performance:read_team') ||
+        ['chro', 'cpo', 'ceo', 'cto', 'cfo', 'pm'].includes(actor.role.toLowerCase())
+      if (!canReadAll) {
+        throw new ForbiddenException(
+          'Access denied: You may only view your own performance record.',
+        )
+      }
+    }
+
     const record = await this.prisma.performanceRecord.findFirst({
       where: { employeeId },
       include: {
@@ -49,7 +96,7 @@ export class PerformanceService {
     return record
   }
 
-  async recordEvaluation(dto: RecordEvaluationDto, actor: DemoUser) {
+  async recordEvaluation(dto: RecordEvaluationDto, actor: AuthenticatedUser) {
     const employee = await this.prisma.employee.findUnique({ where: { id: dto.userId } })
     if (!employee) throw new NotFoundException(`Employee "${dto.userId}" not found`)
 
@@ -96,6 +143,7 @@ export class PerformanceService {
 
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -116,7 +164,7 @@ export class PerformanceService {
     })
   }
 
-  async issueRecognition(dto: IssueRecognitionDto, actor: DemoUser) {
+  async issueRecognition(dto: IssueRecognitionDto, actor: AuthenticatedUser) {
     const employee = await this.prisma.employee.findUnique({ where: { id: dto.userId } })
     if (!employee) throw new NotFoundException(`Employee "${dto.userId}" not found`)
 
@@ -135,6 +183,7 @@ export class PerformanceService {
 
     await this.prisma.auditLog.create({
       data: {
+        ipAddress: getCurrentRequestIp(),
         actorId: actor.id,
         actorName: actor.id,
         actorEmail: `${actor.id}@pointfex.internal`,
@@ -154,7 +203,7 @@ export class PerformanceService {
     return { message: `Recognition "${dto.title}" awarded to ${employee.name}` }
   }
 
-  async issueDisciplinary(dto: IssueDisciplinaryDto, actor: DemoUser) {
+  async issueDisciplinary(dto: IssueDisciplinaryDto, actor: AuthenticatedUser) {
     const employee = await this.prisma.employee.findUnique({ where: { id: dto.userId } })
     if (!employee) throw new NotFoundException(`Employee "${dto.userId}" not found`)
 
@@ -185,6 +234,7 @@ export class PerformanceService {
 
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -205,4 +255,3 @@ export class PerformanceService {
     return { message: `Disciplinary action recorded for ${employee.name}` }
   }
 }
-

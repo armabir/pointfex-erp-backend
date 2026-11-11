@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { TeamsService } from './teams.service'
 import { PrismaService } from '../common/prisma.service'
-import { BadRequestException, NotFoundException } from '@nestjs/common'
+import { BadRequestException } from '@nestjs/common'
 
 describe('TeamsService - Squad Organizational Binding & PM Validation', () => {
   let service: TeamsService
@@ -29,10 +29,7 @@ describe('TeamsService - Squad Organizational Binding & PM Validation', () => {
     }
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        TeamsService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [TeamsService, { provide: PrismaService, useValue: prisma }],
     }).compile()
 
     service = module.get<TeamsService>(TeamsService)

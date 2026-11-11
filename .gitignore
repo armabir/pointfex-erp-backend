@@ -4,8 +4,8 @@
 
 # Environment
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # Logs
 npm-debug.log*
@@ -26,4 +26,3 @@ Thumbs.db
 *.sln
 *.sw?
 
-.vercel

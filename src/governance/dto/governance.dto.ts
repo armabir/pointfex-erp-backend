@@ -48,3 +48,48 @@ export class RatifyDecisionDto {
   notes?: string
 }
 
+export class TransferCeoDto {
+  @IsNotEmpty()
+  @IsString()
+  newCeoEmployeeId: string
+
+  @IsOptional()
+  @IsString()
+  demoteToRoleSlug?: string
+
+  @IsOptional()
+  @IsString()
+  verificationToken?: string
+
+  @IsOptional()
+  @IsString()
+  passwordConfirm?: string
+
+  @IsOptional()
+  @IsString()
+  reason?: string
+}
+
+export class CreateAccessRequestDto {
+  @IsNotEmpty()
+  @IsString()
+  targetEmployeeId: string
+
+  @IsOptional()
+  @IsString()
+  requestedRoleId?: string
+
+  @IsOptional()
+  @IsString()
+  requestedRoleSlug?: string
+
+  @IsOptional()
+  @IsString()
+  reason?: string
+}
+
+export class ReviewAccessRequestDto {
+  @IsOptional()
+  @IsString()
+  reviewNotes?: string
+}

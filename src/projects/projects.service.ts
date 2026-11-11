@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
+import { Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../common/prisma.service'
 import {
   CreateProjectDto,
@@ -216,7 +216,11 @@ export class ProjectsService {
     })
   }
 
-  async updateMilestoneStatus(projectId: string, milestoneId: string, dto: UpdateMilestoneStatusDto) {
+  async updateMilestoneStatus(
+    projectId: string,
+    milestoneId: string,
+    dto: UpdateMilestoneStatusDto,
+  ) {
     const milestone = await this.prisma.projectMilestone.findFirst({
       where: { id: milestoneId, projectId },
     })
@@ -269,4 +273,3 @@ export class ProjectsService {
     })
   }
 }
-

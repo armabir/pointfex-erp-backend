@@ -8,4 +8,3 @@ import { GovernanceController } from './governance.controller'
   exports: [GovernanceService],
 })
 export class GovernanceModule {}
-

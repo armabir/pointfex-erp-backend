@@ -5,42 +5,43 @@ import {
   IssueRecognitionDto,
   IssueDisciplinaryDto,
 } from './dto/performance.dto'
-import { DemoIdentityGuard, DemoUser } from '../common/demo-identity.guard'
-import { RolesGuard } from '../common/roles.guard'
-import { Roles } from '../common/roles.decorator'
+import { AuthenticatedUser } from '../common/auth-user.interface'
+import { PermissionsGuard } from '../common/permissions.guard'
+import { RequireAnyPermission, RequirePermissions } from '../common/require-permissions.decorator'
 import { CurrentUser } from '../common/current-user.decorator'
 
 @Controller('performance')
-@UseGuards(DemoIdentityGuard, RolesGuard)
+@UseGuards(PermissionsGuard)
 export class PerformanceController {
   constructor(private readonly performanceService: PerformanceService) {}
 
   @Get()
-  findAll() {
-    return this.performanceService.findAll()
+  @RequireAnyPermission('performance:read_all', 'performance:read_team', 'performance:read_own')
+  findAll(@CurrentUser() actor: AuthenticatedUser) {
+    return this.performanceService.findAll(actor)
   }
 
   @Get(':employeeId')
-  findOne(@Param('employeeId') employeeId: string) {
-    return this.performanceService.findOne(employeeId)
+  @RequireAnyPermission('performance:read_all', 'performance:read_team', 'performance:read_own')
+  findOne(@Param('employeeId') employeeId: string, @CurrentUser() actor: AuthenticatedUser) {
+    return this.performanceService.findOne(employeeId, actor)
   }
 
   @Post('evaluations')
-  @Roles('chro', 'ceo')
-  recordEvaluation(@Body() dto: RecordEvaluationDto, @CurrentUser() actor: DemoUser) {
+  @RequirePermissions('performance:evaluate')
+  recordEvaluation(@Body() dto: RecordEvaluationDto, @CurrentUser() actor: AuthenticatedUser) {
     return this.performanceService.recordEvaluation(dto, actor)
   }
 
   @Post('recognition')
-  @Roles('chro', 'ceo')
-  issueRecognition(@Body() dto: IssueRecognitionDto, @CurrentUser() actor: DemoUser) {
+  @RequirePermissions('performance:recognize')
+  issueRecognition(@Body() dto: IssueRecognitionDto, @CurrentUser() actor: AuthenticatedUser) {
     return this.performanceService.issueRecognition(dto, actor)
   }
 
   @Post('discipline')
-  @Roles('chro', 'ceo')
-  issueDisciplinary(@Body() dto: IssueDisciplinaryDto, @CurrentUser() actor: DemoUser) {
+  @RequirePermissions('performance:discipline')
+  issueDisciplinary(@Body() dto: IssueDisciplinaryDto, @CurrentUser() actor: AuthenticatedUser) {
     return this.performanceService.issueDisciplinary(dto, actor)
   }
 }
-

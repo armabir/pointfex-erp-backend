@@ -9,4 +9,3 @@ export class AssignPositionDto {
   @IsString()
   positionId: string
 }
-

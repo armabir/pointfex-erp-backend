@@ -1,7 +1,7 @@
-import { IsNotEmpty, IsOptional, IsString, IsInt, Min, Max } from 'class-validator'
+import { IsNotEmpty, IsOptional, IsString, IsInt, IsBoolean } from 'class-validator'
 
 export class CreateTeamDto {
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
   id?: string
 
@@ -66,10 +66,10 @@ export class AddTeamMemberDto {
   employeeId: string
 
   @IsOptional()
+  @IsBoolean()
   isLead?: boolean
 
   @IsOptional()
   @IsString()
   roleInTeam?: string
 }
-

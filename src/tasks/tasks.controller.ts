@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Param,
-  Body,
-  Query,
-  UseGuards,
-} from '@nestjs/common'
+import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards } from '@nestjs/common'
 import { TasksService } from './tasks.service'
 import {
   CreateTaskDto,
@@ -18,13 +9,13 @@ import {
   SubmitTaskWorkDto,
   AddTaskCommentDto,
 } from './dto/task.dto'
-import { DemoIdentityGuard, DemoUser } from '../common/demo-identity.guard'
-import { RolesGuard } from '../common/roles.guard'
-import { Roles } from '../common/roles.decorator'
+import { AuthenticatedUser } from '../common/auth-user.interface'
+import { PermissionsGuard } from '../common/permissions.guard'
+import { RequirePermissions } from '../common/require-permissions.decorator'
 import { CurrentUser } from '../common/current-user.decorator'
 
 @Controller('tasks')
-@UseGuards(DemoIdentityGuard, RolesGuard)
+@UseGuards(PermissionsGuard)
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 
@@ -45,7 +36,7 @@ export class TasksController {
   }
 
   @Post()
-  create(@Body() dto: CreateTaskDto, @CurrentUser() actor: DemoUser) {
+  create(@Body() dto: CreateTaskDto, @CurrentUser() actor: AuthenticatedUser) {
     return this.tasksService.create(dto, actor)
   }
 
@@ -53,37 +44,37 @@ export class TasksController {
   updateStatus(
     @Param('id') id: string,
     @Body() dto: UpdateTaskStatusDto,
-    @CurrentUser() actor: DemoUser,
+    @CurrentUser() actor: AuthenticatedUser,
   ) {
     return this.tasksService.updateStatus(id, dto, actor)
   }
 
   @Post(':id/approve')
-  @Roles('pm', 'cto', 'ceo')
+  @RequirePermissions('tasks:approve')
   approve(
     @Param('id') id: string,
     @Body() dto: ApproveTaskDto,
-    @CurrentUser() actor: DemoUser,
+    @CurrentUser() actor: AuthenticatedUser,
   ) {
     return this.tasksService.approve(id, dto, actor)
   }
 
   @Post(':id/reject')
-  @Roles('pm', 'cto', 'ceo')
+  @RequirePermissions('tasks:reject')
   reject(
     @Param('id') id: string,
     @Body() dto: RejectTaskDto,
-    @CurrentUser() actor: DemoUser,
+    @CurrentUser() actor: AuthenticatedUser,
   ) {
     return this.tasksService.reject(id, dto, actor)
   }
 
   @Post(':id/reassign')
-  @Roles('pm', 'cto', 'ceo')
+  @RequirePermissions('tasks:reassign')
   reassign(
     @Param('id') id: string,
     @Body() dto: ReassignTaskDto,
-    @CurrentUser() actor: DemoUser,
+    @CurrentUser() actor: AuthenticatedUser,
   ) {
     return this.tasksService.reassign(id, dto, actor)
   }
@@ -101,7 +92,7 @@ export class TasksController {
   submitWork(
     @Param('id') taskId: string,
     @Body() dto: SubmitTaskWorkDto,
-    @CurrentUser() actor: DemoUser,
+    @CurrentUser() actor: AuthenticatedUser,
   ) {
     return this.tasksService.submitWork(taskId, dto, actor)
   }
@@ -110,9 +101,8 @@ export class TasksController {
   addComment(
     @Param('id') taskId: string,
     @Body() dto: AddTaskCommentDto,
-    @CurrentUser() actor: DemoUser,
+    @CurrentUser() actor: AuthenticatedUser,
   ) {
     return this.tasksService.addComment(taskId, dto, actor)
   }
 }
-

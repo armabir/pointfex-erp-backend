@@ -55,4 +55,3 @@ export class UpdateConsultancyDto {
   @IsString()
   ctoNotes?: string
 }
-

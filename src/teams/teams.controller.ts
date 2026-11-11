@@ -1,12 +1,11 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards } from '@nestjs/common'
 import { TeamsService } from './teams.service'
 import { CreateTeamDto, UpdateTeamDto, AddTeamMemberDto } from './dto/team.dto'
-import { DemoIdentityGuard } from '../common/demo-identity.guard'
-import { RolesGuard } from '../common/roles.guard'
-import { Roles } from '../common/roles.decorator'
+import { PermissionsGuard } from '../common/permissions.guard'
+import { RequirePermissions } from '../common/require-permissions.decorator'
 
 @Controller('teams')
-@UseGuards(DemoIdentityGuard, RolesGuard)
+@UseGuards(PermissionsGuard)
 export class TeamsController {
   constructor(private readonly teamsService: TeamsService) {}
 
@@ -21,27 +20,26 @@ export class TeamsController {
   }
 
   @Post()
-  @Roles('cto', 'ceo')
+  @RequirePermissions('teams:create')
   create(@Body() dto: CreateTeamDto) {
     return this.teamsService.create(dto)
   }
 
   @Patch(':id')
-  @Roles('cto', 'ceo')
+  @RequirePermissions('teams:update')
   update(@Param('id') id: string, @Body() dto: UpdateTeamDto) {
     return this.teamsService.update(id, dto)
   }
 
   @Post(':id/members')
-  @Roles('cto', 'ceo')
+  @RequirePermissions('teams:manage_members')
   addMember(@Param('id') id: string, @Body() dto: AddTeamMemberDto) {
     return this.teamsService.addMember(id, dto)
   }
 
   @Delete(':id/members/:employeeId')
-  @Roles('cto', 'ceo')
+  @RequirePermissions('teams:manage_members')
   removeMember(@Param('id') id: string, @Param('employeeId') employeeId: string) {
     return this.teamsService.removeMember(id, employeeId)
   }
 }
-

@@ -1,7 +1,7 @@
 import { IsNotEmpty, IsOptional, IsString, IsNumber, IsArray, IsDateString } from 'class-validator'
 
 export class CreateProjectDto {
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
   id?: string
 
@@ -129,4 +129,3 @@ export class AssignProjectTeamDto {
   @IsString()
   teamId: string
 }
-

@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Param,
-  Body,
-  Query,
-  UseGuards,
-} from '@nestjs/common'
+import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards } from '@nestjs/common'
 import { ReportsService } from './reports.service'
 import {
   CreateReportDto,
@@ -15,13 +6,13 @@ import {
   ForwardReportDto,
   AdjudicateConfidentialGrievanceDto,
 } from './dto/report.dto'
-import { DemoIdentityGuard, DemoUser } from '../common/demo-identity.guard'
-import { RolesGuard } from '../common/roles.guard'
-import { Roles } from '../common/roles.decorator'
+import { AuthenticatedUser } from '../common/auth-user.interface'
+import { PermissionsGuard } from '../common/permissions.guard'
+import { RequirePermissions } from '../common/require-permissions.decorator'
 import { CurrentUser } from '../common/current-user.decorator'
 
 @Controller('reports')
-@UseGuards(DemoIdentityGuard, RolesGuard)
+@UseGuards(PermissionsGuard)
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
@@ -32,50 +23,52 @@ export class ReportsController {
     @Query('projectId') projectId?: string,
     @Query('teamId') teamId?: string,
     @Query('isConfidential') isConfidential?: string,
-    @CurrentUser() actor?: DemoUser,
+    @CurrentUser() actor?: AuthenticatedUser,
   ) {
     const isConfBool = isConfidential !== undefined ? isConfidential === 'true' : undefined
-    return this.reportsService.findAll({ type, status, projectId, teamId, isConfidential: isConfBool }, actor)
+    return this.reportsService.findAll(
+      { type, status, projectId, teamId, isConfidential: isConfBool },
+      actor,
+    )
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string, @CurrentUser() actor: DemoUser) {
+  findOne(@Param('id') id: string, @CurrentUser() actor: AuthenticatedUser) {
     return this.reportsService.findOne(id, actor)
   }
 
   @Post()
-  create(@Body() dto: CreateReportDto, @CurrentUser() actor: DemoUser) {
+  create(@Body() dto: CreateReportDto, @CurrentUser() actor: AuthenticatedUser) {
     return this.reportsService.create(dto, actor)
   }
 
   @Patch(':id/status')
-  @Roles('pm', 'cto', 'cfo', 'chro', 'ceo')
+  @RequirePermissions('reports:triage')
   updateStatus(
     @Param('id') id: string,
     @Body() dto: UpdateReportStatusDto,
-    @CurrentUser() actor: DemoUser,
+    @CurrentUser() actor: AuthenticatedUser,
   ) {
     return this.reportsService.updateStatus(id, dto, actor)
   }
 
   @Post(':id/forward')
-  @Roles('pm', 'cto', 'ceo')
+  @RequirePermissions('reports:forward')
   forwardToCLevel(
     @Param('id') id: string,
     @Body() dto: ForwardReportDto,
-    @CurrentUser() actor: DemoUser,
+    @CurrentUser() actor: AuthenticatedUser,
   ) {
     return this.reportsService.forwardToCLevel(id, dto, actor)
   }
 
   @Patch(':id/confidential')
-  @Roles('chro', 'ceo')
+  @RequirePermissions('grievances:adjudicate_confidential')
   adjudicateConfidential(
     @Param('id') id: string,
     @Body() dto: AdjudicateConfidentialGrievanceDto,
-    @CurrentUser() actor: DemoUser,
+    @CurrentUser() actor: AuthenticatedUser,
   ) {
     return this.reportsService.adjudicateConfidential(id, dto, actor)
   }
 }
-

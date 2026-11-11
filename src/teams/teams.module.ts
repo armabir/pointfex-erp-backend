@@ -8,4 +8,3 @@ import { TeamsController } from './teams.controller'
   exports: [TeamsService],
 })
 export class TeamsModule {}
-

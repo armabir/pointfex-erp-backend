@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { TasksService } from './tasks.service'
 import { PrismaService } from '../common/prisma.service'
-import { ForbiddenException, BadRequestException } from '@nestjs/common'
+import { ForbiddenException } from '@nestjs/common'
 import { Prisma } from '@prisma/client'
 
 describe('TasksService - Kanban State Transitions & Approval Gate', () => {
@@ -34,10 +34,7 @@ describe('TasksService - Kanban State Transitions & Approval Gate', () => {
     }
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        TasksService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [TasksService, { provide: PrismaService, useValue: prisma }],
     }).compile()
 
     service = module.get<TasksService>(TasksService)
@@ -164,4 +161,3 @@ describe('TasksService - Kanban State Transitions & Approval Gate', () => {
     })
   })
 })
-

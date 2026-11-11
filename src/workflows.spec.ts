@@ -20,9 +20,7 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
   let teamsService: TeamsService
   let projectsService: ProjectsService
   let performanceService: PerformanceService
-  let governanceService: GovernanceService
   let engineeringService: EngineeringService
-  let positionsService: PositionsService
 
   beforeEach(async () => {
     prisma = {
@@ -77,9 +75,7 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
     teamsService = module.get<TeamsService>(TeamsService)
     projectsService = module.get<ProjectsService>(ProjectsService)
     performanceService = module.get<PerformanceService>(PerformanceService)
-    governanceService = module.get<GovernanceService>(GovernanceService)
     engineeringService = module.get<EngineeringService>(EngineeringService)
-    positionsService = module.get<PositionsService>(PositionsService)
   })
 
   // Workflow 1: CTO assigns task to PM
@@ -93,7 +89,11 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
       creatorId: 'emp_cto_01',
       status: 'todo',
     })
-    prisma.task.findUnique.mockResolvedValue({ id: 'task_cto_01', title: 'Architectural Review', status: 'todo' })
+    prisma.task.findUnique.mockResolvedValue({
+      id: 'task_cto_01',
+      title: 'Architectural Review',
+      status: 'todo',
+    })
     prisma.task.update.mockResolvedValue({ id: 'task_cto_01', status: 'in_progress' })
 
     const task = await tasksService.create(
@@ -130,10 +130,18 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
 
   // Workflow 3: Developer moves task to In Review
   it('Workflow 3: Developer moves task to In Review', async () => {
-    prisma.task.findUnique.mockResolvedValue({ id: 'task_01', title: 'GIS Map', status: 'in_progress' })
+    prisma.task.findUnique.mockResolvedValue({
+      id: 'task_01',
+      title: 'GIS Map',
+      status: 'in_progress',
+    })
     prisma.task.update.mockResolvedValue({ id: 'task_01', status: 'in_review' })
 
-    const updated = await tasksService.updateStatus('task_01', { status: 'in_review' }, { id: 'emp_dev_01', role: 'developer' })
+    const updated = await tasksService.updateStatus(
+      'task_01',
+      { status: 'in_review' },
+      { id: 'emp_dev_01', role: 'developer' },
+    )
     expect(updated.status).toBe('in_review')
   })
 
@@ -149,7 +157,11 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
     prisma.task.update.mockResolvedValue({ id: 'task_01', status: 'completed' })
     prisma.financialTransaction.findFirst.mockResolvedValue(null)
 
-    const res = await tasksService.approve('task_01', { feedback: 'Approved' }, { id: 'emp_pm_01', role: 'pm' })
+    const res = await tasksService.approve(
+      'task_01',
+      { feedback: 'Approved' },
+      { id: 'emp_pm_01', role: 'pm' },
+    )
     expect(res.status).toBe('completed')
     expect(prisma.employeeWallet.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -162,21 +174,37 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
 
   // Workflow 5: PM rejects task -> returns to In Progress with feedback
   it('Workflow 5: PM rejects task -> Task returns to In Progress with feedback', async () => {
-    prisma.task.findUnique.mockResolvedValue({ id: 'task_01', title: 'GIS Map', status: 'in_review' })
+    prisma.task.findUnique.mockResolvedValue({
+      id: 'task_01',
+      title: 'GIS Map',
+      status: 'in_review',
+    })
     prisma.task.update.mockResolvedValue({ id: 'task_01', status: 'in_progress' })
 
-    const res = await tasksService.reject('task_01', { feedback: 'Fix test suite' }, { id: 'emp_pm_01', role: 'pm' })
+    const res = await tasksService.reject(
+      'task_01',
+      { feedback: 'Fix test suite' },
+      { id: 'emp_pm_01', role: 'pm' },
+    )
     expect(res.status).toBe('in_progress')
     expect(prisma.taskComment.create).toHaveBeenCalled()
   })
 
   // Workflow 6: PM reassigns task to another developer
   it('Workflow 6: PM reassigns task to another developer', async () => {
-    prisma.task.findUnique.mockResolvedValue({ id: 'task_01', title: 'GIS Map', assigneeId: 'emp_dev_01' })
+    prisma.task.findUnique.mockResolvedValue({
+      id: 'task_01',
+      title: 'GIS Map',
+      assigneeId: 'emp_dev_01',
+    })
     prisma.employee.findUnique.mockResolvedValue({ id: 'emp_dev_02', name: 'Mehedi Hasan' })
     prisma.task.update.mockResolvedValue({ id: 'task_01', assigneeId: 'emp_dev_02' })
 
-    const res = await tasksService.reassign('task_01', { newAssigneeId: 'emp_dev_02' }, { id: 'emp_pm_01', role: 'pm' })
+    const res = await tasksService.reassign(
+      'task_01',
+      { newAssigneeId: 'emp_dev_02' },
+      { id: 'emp_pm_01', role: 'pm' },
+    )
     expect(res.assigneeId).toBe('emp_dev_02')
   })
 
@@ -193,7 +221,11 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
   it('Workflow 8: Users create personal tasks', async () => {
     prisma.project.findUnique.mockResolvedValue({ id: 'proj_01' })
     prisma.employee.findUnique.mockResolvedValue({ id: 'emp_dev_01', name: 'Arifur Rahman' })
-    prisma.task.create.mockResolvedValue({ id: 'task_pers', creatorId: 'emp_dev_01', assigneeId: 'emp_dev_01' })
+    prisma.task.create.mockResolvedValue({
+      id: 'task_pers',
+      creatorId: 'emp_dev_01',
+      assigneeId: 'emp_dev_01',
+    })
 
     const task = await tasksService.create(
       { title: 'Personal Refactor', projectId: 'proj_01', assigneeId: 'emp_dev_01' },
@@ -224,7 +256,11 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
 
   // Workflow 10: PM forwards submission to C-Level
   it('Workflow 10: PM forwards submission to C-level with endorsement', async () => {
-    prisma.report.findUnique.mockResolvedValue({ id: 'rep_01', title: 'Tile Sync Engine', isConfidential: false })
+    prisma.report.findUnique.mockResolvedValue({
+      id: 'rep_01',
+      title: 'Tile Sync Engine',
+      isConfidential: false,
+    })
     prisma.report.update.mockResolvedValue({ id: 'rep_01', status: 'forwarded_to_c_level' })
 
     const res = await reportsService.forwardToCLevel(
@@ -237,8 +273,15 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
 
   // Workflow 11: CFO allocates budget to project
   it('Workflow 11: CFO allocates budget to project', async () => {
-    prisma.project.findUnique.mockResolvedValue({ id: 'proj_01', name: 'Unseen BD', budget: new Prisma.Decimal(30000) })
-    prisma.companyTreasury.findUnique.mockResolvedValue({ id: 'singleton', unallocatedReserves: new Prisma.Decimal(50000) })
+    prisma.project.findUnique.mockResolvedValue({
+      id: 'proj_01',
+      name: 'Unseen BD',
+      budget: new Prisma.Decimal(30000),
+    })
+    prisma.companyTreasury.findUnique.mockResolvedValue({
+      id: 'singleton',
+      unallocatedReserves: new Prisma.Decimal(50000),
+    })
     prisma.project.update.mockResolvedValue({ id: 'proj_01', budget: new Prisma.Decimal(45000) })
 
     const res = await financeService.allocateProjectBudget(
@@ -275,7 +318,10 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
       projectId: 'proj_01',
       project: { name: 'Unseen BD' },
     })
-    prisma.companyTreasury.findUnique.mockResolvedValue({ id: 'singleton', unallocatedReserves: new Prisma.Decimal(50000) })
+    prisma.companyTreasury.findUnique.mockResolvedValue({
+      id: 'singleton',
+      unallocatedReserves: new Prisma.Decimal(50000),
+    })
     prisma.budgetRequest.update.mockResolvedValue({ id: 'br_01', status: 'approved' })
 
     const req = await financeService.requestBudgetIncrease(
@@ -294,7 +340,11 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
 
   // Workflow 15: CTO creates project and assigns team
   it('Workflow 15: CTO creates project and assigns team', async () => {
-    prisma.project.create.mockResolvedValue({ id: 'proj_new', name: 'Digital Identity BD', code: 'DIB-13' })
+    prisma.project.create.mockResolvedValue({
+      id: 'proj_new',
+      name: 'Digital Identity BD',
+      code: 'DIB-13',
+    })
     prisma.team.findUnique.mockResolvedValue({ id: 'team_01' })
     prisma.teamProject.create.mockResolvedValue({ id: 'tp_new' })
 
@@ -309,15 +359,34 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
 
   // Workflow 16: PM/CTO creates and updates project milestone
   it('Workflow 16: PM/CTO creates and updates project milestone', async () => {
-    prisma.project.findUnique.mockResolvedValue({ id: 'proj_01', teamProjects: [], milestones: [], tasks: [] })
-    prisma.projectMilestone.create.mockResolvedValue({ id: 'ms_01', title: 'Beta Release', status: 'pending' })
-    prisma.projectMilestone.findFirst.mockResolvedValue({ id: 'ms_01', projectId: 'proj_01', status: 'pending' })
-    prisma.projectMilestone.update.mockResolvedValue({ id: 'ms_01', status: 'completed', progress: 100 })
+    prisma.project.findUnique.mockResolvedValue({
+      id: 'proj_01',
+      teamProjects: [],
+      milestones: [],
+      tasks: [],
+    })
+    prisma.projectMilestone.create.mockResolvedValue({
+      id: 'ms_01',
+      title: 'Beta Release',
+      status: 'pending',
+    })
+    prisma.projectMilestone.findFirst.mockResolvedValue({
+      id: 'ms_01',
+      projectId: 'proj_01',
+      status: 'pending',
+    })
+    prisma.projectMilestone.update.mockResolvedValue({
+      id: 'ms_01',
+      status: 'completed',
+      progress: 100,
+    })
 
     const ms = await projectsService.addMilestone('proj_01', { title: 'Beta Release' })
     expect(ms.title).toBe('Beta Release')
 
-    const updated = await projectsService.updateMilestoneStatus('proj_01', 'ms_01', { status: 'completed' })
+    const updated = await projectsService.updateMilestoneStatus('proj_01', 'ms_01', {
+      status: 'completed',
+    })
     expect(updated.status).toBe('completed')
   })
 
@@ -325,7 +394,11 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
   it('Workflow 17: CTO reassigns employees to teams', async () => {
     prisma.team.findUnique.mockResolvedValue({ id: 'team_02', memberships: [], teamProjects: [] })
     prisma.employee.findUnique.mockResolvedValue({ id: 'emp_dev_01' })
-    prisma.teamMembership.create.mockResolvedValue({ id: 'tm_new', teamId: 'team_02', employeeId: 'emp_dev_01' })
+    prisma.teamMembership.create.mockResolvedValue({
+      id: 'tm_new',
+      teamId: 'team_02',
+      employeeId: 'emp_dev_01',
+    })
 
     const res = await teamsService.addMember('team_02', { employeeId: 'emp_dev_01' })
     expect(res.teamId).toBe('team_02')
@@ -335,7 +408,10 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
   it('Workflow 18: CHRO records performance evaluations', async () => {
     prisma.employee.findUnique.mockResolvedValue({ id: 'emp_dev_01', name: 'Arifur Rahman' })
     prisma.performanceRecord.findFirst.mockResolvedValue(null)
-    prisma.performanceRecord.create.mockResolvedValue({ id: 'perf_01', overallScore: new Prisma.Decimal(95) })
+    prisma.performanceRecord.create.mockResolvedValue({
+      id: 'perf_01',
+      overallScore: new Prisma.Decimal(95),
+    })
 
     const record = await performanceService.recordEvaluation(
       { userId: 'emp_dev_01', score: 95, tier: 'top_performer', notes: 'Excellent' },
@@ -347,8 +423,14 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
   // Workflow 19: CFO/CHRO issues bonuses and penalties
   it('Workflow 19: CFO/CHRO issues bonus and penalty adjustments', async () => {
     prisma.employee.findUnique.mockResolvedValue({ id: 'emp_dev_01', name: 'Arifur Rahman' })
-    prisma.employeeWallet.findUnique.mockResolvedValue({ employeeId: 'emp_dev_01', balance: new Prisma.Decimal(5000) })
-    prisma.companyTreasury.findUnique.mockResolvedValue({ id: 'singleton', unallocatedReserves: new Prisma.Decimal(30000) })
+    prisma.employeeWallet.findUnique.mockResolvedValue({
+      employeeId: 'emp_dev_01',
+      balance: new Prisma.Decimal(5000),
+    })
+    prisma.companyTreasury.findUnique.mockResolvedValue({
+      id: 'singleton',
+      unallocatedReserves: new Prisma.Decimal(30000),
+    })
     prisma.financialTransaction.create.mockResolvedValue({ id: 'tx_adj' })
 
     const res = await financeService.issueAdjustment(
@@ -360,10 +442,19 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
 
   // Workflow 20: Employees submit complaints & confidential grievances
   it('Workflow 20: Employees submit complaints & confidential grievances', async () => {
-    prisma.report.create.mockResolvedValue({ id: 'rep_01', isConfidential: true, title: 'Whistleblower Report' })
+    prisma.report.create.mockResolvedValue({
+      id: 'rep_01',
+      isConfidential: true,
+      title: 'Whistleblower Report',
+    })
 
     const rep = await reportsService.create(
-      { title: 'Whistleblower Report', description: 'Ethics issue', type: 'complaint', isConfidential: true },
+      {
+        title: 'Whistleblower Report',
+        description: 'Ethics issue',
+        type: 'complaint',
+        isConfidential: true,
+      },
       { id: 'emp_dev_04', role: 'developer' },
     )
     expect(rep.isConfidential).toBe(true)
@@ -371,12 +462,20 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
 
   // Workflow 21: Confidential grievances are accessible only to CHRO and CEO
   it('Workflow 21: Confidential grievances are accessible only to CHRO and CEO', async () => {
-    prisma.report.findUnique.mockResolvedValue({ id: 'rep_conf', isConfidential: true, authorId: 'emp_dev_04' })
+    prisma.report.findUnique.mockResolvedValue({
+      id: 'rep_conf',
+      isConfidential: true,
+      authorId: 'emp_dev_04',
+    })
 
     // CTO cannot access
-    await expect(reportsService.findOne('rep_conf', { id: 'emp_cto_01', role: 'cto' })).rejects.toThrow(ForbiddenException)
+    await expect(
+      reportsService.findOne('rep_conf', { id: 'emp_cto_01', role: 'cto' }),
+    ).rejects.toThrow(ForbiddenException)
     // PM cannot access
-    await expect(reportsService.findOne('rep_conf', { id: 'emp_pm_01', role: 'pm' })).rejects.toThrow(ForbiddenException)
+    await expect(
+      reportsService.findOne('rep_conf', { id: 'emp_pm_01', role: 'pm' }),
+    ).rejects.toThrow(ForbiddenException)
     // CHRO CAN access
     const chroAccess = await reportsService.findOne('rep_conf', { id: 'emp_chro_01', role: 'chro' })
     expect(chroAccess.id).toBe('rep_conf')
@@ -412,4 +511,3 @@ describe('Comprehensive Cross-Role Workflow Verification (22 Workflows)', () => 
     )
   })
 })
-

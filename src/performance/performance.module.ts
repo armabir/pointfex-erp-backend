@@ -10,4 +10,3 @@ import { FinanceModule } from '../finance/finance.module'
   exports: [PerformanceService],
 })
 export class PerformanceModule {}
-

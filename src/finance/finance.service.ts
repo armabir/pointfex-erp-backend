@@ -1,7 +1,9 @@
+import { getCurrentRequestIp } from '../common/ip-address.util'
 import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common'
 import { PrismaService } from '../common/prisma.service'
 import {
@@ -14,7 +16,7 @@ import {
   ClientRevenueShareDto,
 } from './dto/finance.dto'
 import { Prisma } from '@prisma/client'
-import { DemoUser } from '../common/demo-identity.guard'
+import { AuthenticatedUser } from '../common/auth-user.interface'
 
 @Injectable()
 export class FinanceService {
@@ -30,7 +32,17 @@ export class FinanceService {
     return treasury
   }
 
-  async getWallet(employeeId: string) {
+  async getWallet(employeeId: string, actor?: AuthenticatedUser) {
+    const canReadAll =
+      !actor ||
+      employeeId === actor.id ||
+      actor.permissions?.includes('wallets:read_all') ||
+      ['cfo', 'ceo'].includes(actor.role.toLowerCase())
+
+    if (!canReadAll) {
+      throw new ForbiddenException('Access denied: You can only view your own compensation wallet.')
+    }
+
     const wallet = await this.prisma.employeeWallet.findUnique({
       where: { employeeId },
       include: {
@@ -54,13 +66,22 @@ export class FinanceService {
     })
   }
 
-  async getTransactions(filters: {
-    employeeId?: string
-    projectId?: string
-    type?: string
-  }) {
-    const where: any = {}
-    if (filters.employeeId) where.employeeId = filters.employeeId
+  async getTransactions(
+    filters: { employeeId?: string; projectId?: string; type?: string },
+    actor?: AuthenticatedUser,
+  ) {
+    const where: Prisma.FinancialTransactionWhereInput = {}
+    const canReadAll =
+      !actor ||
+      actor.permissions?.includes('transactions:read_all') ||
+      ['cfo', 'ceo'].includes(actor.role.toLowerCase())
+
+    if (!canReadAll && actor) {
+      where.employeeId = actor.id
+    } else if (filters.employeeId) {
+      where.employeeId = filters.employeeId
+    }
+
     if (filters.projectId) where.projectId = filters.projectId
     if (filters.type) where.type = filters.type
 
@@ -77,7 +98,7 @@ export class FinanceService {
   }
 
   async getBudgetRequests(projectId?: string, status?: string) {
-    const where: any = {}
+    const where: Prisma.BudgetRequestWhereInput = {}
     if (projectId) where.projectId = projectId
     if (status) where.status = status
 
@@ -89,7 +110,7 @@ export class FinanceService {
   }
 
   // PM distributes project funds to developer (Rule 12 & 13)
-  async allocateDeveloperBudget(dto: AllocateDeveloperBudgetDto, actor: DemoUser) {
+  async allocateDeveloperBudget(dto: AllocateDeveloperBudgetDto, actor: AuthenticatedUser) {
     const allocAmount = new Prisma.Decimal(dto.amount)
 
     return this.prisma.$transaction(async (tx) => {
@@ -150,7 +171,8 @@ export class FinanceService {
           projectId: dto.projectId,
           amount: allocAmount,
           type: 'budget_allocation',
-          description: dto.description || `Week ${dto.week || 3} sprint developer budget allocation`,
+          description:
+            dto.description || `Week ${dto.week || 3} sprint developer budget allocation`,
           status: 'allocated',
         },
       })
@@ -158,6 +180,7 @@ export class FinanceService {
       // 5. Audit Log
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -183,12 +206,21 @@ export class FinanceService {
   }
 
   // CFO allocates project budget pool from reserves (Rule 11 & 14)
-  async allocateProjectBudget(dto: AllocateProjectBudgetDto, actor: DemoUser) {
+  async allocateProjectBudget(dto: AllocateProjectBudgetDto, actor: AuthenticatedUser) {
     const newBudgetDecimal = new Prisma.Decimal(dto.newBudget)
 
     return this.prisma.$transaction(async (tx) => {
       const project = await tx.project.findUnique({ where: { id: dto.projectId } })
       if (!project) throw new NotFoundException(`Project "${dto.projectId}" not found`)
+
+      if (
+        project.allocatedBudget !== undefined &&
+        newBudgetDecimal.lessThan(project.allocatedBudget)
+      ) {
+        throw new BadRequestException(
+          `New budget (৳${newBudgetDecimal.toNumber().toLocaleString()}) cannot be lower than already allocated amount (৳${new Prisma.Decimal(project.allocatedBudget).toNumber().toLocaleString()})`,
+        )
+      }
 
       const treasury = await tx.companyTreasury.findUnique({ where: { id: 'singleton' } })
       if (!treasury) throw new NotFoundException('Treasury not found')
@@ -231,6 +263,7 @@ export class FinanceService {
       // 4. Audit Log
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -252,7 +285,7 @@ export class FinanceService {
   }
 
   // PM requests budget increase from CFO
-  async requestBudgetIncrease(dto: RequestBudgetIncreaseDto, actor: DemoUser) {
+  async requestBudgetIncrease(dto: RequestBudgetIncreaseDto, actor: AuthenticatedUser) {
     const project = await this.prisma.project.findUnique({ where: { id: dto.projectId } })
     if (!project) throw new NotFoundException(`Project "${dto.projectId}" not found`)
 
@@ -272,6 +305,7 @@ export class FinanceService {
 
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -293,7 +327,11 @@ export class FinanceService {
   }
 
   // CFO approves budget request
-  async approveBudgetRequest(requestId: string, dto: AdjudicateBudgetRequestDto, actor: DemoUser) {
+  async approveBudgetRequest(
+    requestId: string,
+    dto: AdjudicateBudgetRequestDto,
+    actor: AuthenticatedUser,
+  ) {
     const approvedAmount = new Prisma.Decimal(dto.approvedAmount)
 
     return this.prisma.$transaction(async (tx) => {
@@ -302,6 +340,11 @@ export class FinanceService {
         include: { project: true },
       })
       if (!req) throw new NotFoundException(`Budget request "${requestId}" not found`)
+      if (req.status && req.status !== 'pending') {
+        throw new BadRequestException(
+          `Budget request "${requestId}" has already been ${req.status}`,
+        )
+      }
 
       const treasury = await tx.companyTreasury.findUnique({ where: { id: 'singleton' } })
       if (!treasury) throw new NotFoundException('Treasury not found')
@@ -333,7 +376,9 @@ export class FinanceService {
         data: {
           status: 'approved',
           approvedAmount,
-          feedback: dto.feedback || `Approved in full by CFO: +৳${approvedAmount.toNumber().toLocaleString()} added to project budget.`,
+          feedback:
+            dto.feedback ||
+            `Approved in full by CFO: +৳${approvedAmount.toNumber().toLocaleString()} added to project budget.`,
           reviewedById: actor.id,
           reviewedAt: new Date(),
         },
@@ -342,6 +387,7 @@ export class FinanceService {
       // 4. Audit Log
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -363,9 +409,16 @@ export class FinanceService {
   }
 
   // CFO rejects budget request
-  async rejectBudgetRequest(requestId: string, dto: RejectBudgetRequestDto, actor: DemoUser) {
+  async rejectBudgetRequest(
+    requestId: string,
+    dto: RejectBudgetRequestDto,
+    actor: AuthenticatedUser,
+  ) {
     const req = await this.prisma.budgetRequest.findUnique({ where: { id: requestId } })
     if (!req) throw new NotFoundException(`Budget request "${requestId}" not found`)
+    if (req.status && req.status !== 'pending') {
+      throw new BadRequestException(`Budget request "${requestId}" has already been ${req.status}`)
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const updatedReq = await tx.budgetRequest.update({
@@ -380,6 +433,7 @@ export class FinanceService {
 
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -400,7 +454,7 @@ export class FinanceService {
   }
 
   // Issue bonus or penalty
-  async issueAdjustment(dto: IssueFinancialAdjustmentDto, actor: DemoUser) {
+  async issueAdjustment(dto: IssueFinancialAdjustmentDto, actor: AuthenticatedUser) {
     const amountDecimal = new Prisma.Decimal(dto.amount)
 
     return this.prisma.$transaction(async (tx) => {
@@ -409,6 +463,7 @@ export class FinanceService {
 
       const wallet = await tx.employeeWallet.findUnique({ where: { employeeId: dto.userId } })
 
+      let updatedWallet: any = wallet
       if (dto.type === 'bonus') {
         const treasury = await tx.companyTreasury.findUnique({ where: { id: 'singleton' } })
         if (treasury && amountDecimal.greaterThan(treasury.unallocatedReserves)) {
@@ -418,7 +473,7 @@ export class FinanceService {
         }
 
         // Increment wallet
-        await tx.employeeWallet.upsert({
+        updatedWallet = await tx.employeeWallet.upsert({
           where: { employeeId: dto.userId },
           update: {
             balance: { increment: amountDecimal },
@@ -448,7 +503,7 @@ export class FinanceService {
         const currentBalance = wallet ? wallet.balance : new Prisma.Decimal(0)
         const deduction = Prisma.Decimal.min(currentBalance, amountDecimal)
 
-        await tx.employeeWallet.upsert({
+        updatedWallet = await tx.employeeWallet.upsert({
           where: { employeeId: dto.userId },
           update: {
             balance: { decrement: deduction },
@@ -467,6 +522,7 @@ export class FinanceService {
       // Ledger entry
       const txRecord = await tx.financialTransaction.create({
         data: {
+          walletId: updatedWallet?.id || wallet?.id,
           employeeId: dto.userId,
           amount: dto.type === 'bonus' ? amountDecimal : Prisma.Decimal.mul(amountDecimal, -1),
           type: dto.type === 'bonus' ? 'bonus' : 'penalty',
@@ -479,12 +535,14 @@ export class FinanceService {
       // Audit Log
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
           actorRole: actor.role.toUpperCase(),
           action: dto.type === 'bonus' ? 'BONUS_ISSUED' : 'PENALTY_ISSUED',
-          actionCode: dto.type === 'bonus' ? 'PERFORMANCE_BONUS_DISBURSED' : 'DISCIPLINARY_DEDUCTION_APPLIED',
+          actionCode:
+            dto.type === 'bonus' ? 'PERFORMANCE_BONUS_DISBURSED' : 'DISCIPLINARY_DEDUCTION_APPLIED',
           severity: dto.type === 'bonus' ? 'SUCCESS' : 'WARNING',
           entityType: 'user',
           entityId: dto.userId,
@@ -503,7 +561,7 @@ export class FinanceService {
   }
 
   // Commercial Client Revenue Sharing (50% acquirer, 50% squad developers)
-  async processClientRevenueShare(dto: ClientRevenueShareDto, actor: DemoUser) {
+  async processClientRevenueShare(dto: ClientRevenueShareDto, actor: AuthenticatedUser) {
     const totalRev = new Prisma.Decimal(dto.clientRevenueAmount)
 
     return this.prisma.$transaction(async (tx) => {
@@ -539,7 +597,7 @@ export class FinanceService {
       const squadDevelopers = activeTeam?.memberships.map((m) => m.employee) || []
 
       // 1. Credit Acquirer
-      await tx.employeeWallet.upsert({
+      const acqWallet = await tx.employeeWallet.upsert({
         where: { employeeId: dto.acquirerEmployeeId },
         update: {
           balance: { increment: acquirerShare },
@@ -556,6 +614,7 @@ export class FinanceService {
 
       await tx.financialTransaction.create({
         data: {
+          walletId: acqWallet?.id,
           employeeId: dto.acquirerEmployeeId,
           projectId: dto.projectId,
           amount: acquirerShare,
@@ -570,7 +629,7 @@ export class FinanceService {
         const perDevShare = Prisma.Decimal.div(squadShareTotal, squadDevelopers.length)
 
         for (const dev of squadDevelopers) {
-          await tx.employeeWallet.upsert({
+          const devWallet = await tx.employeeWallet.upsert({
             where: { employeeId: dev.id },
             update: {
               balance: { increment: perDevShare },
@@ -587,6 +646,7 @@ export class FinanceService {
 
           await tx.financialTransaction.create({
             data: {
+              walletId: devWallet?.id,
               employeeId: dev.id,
               projectId: dto.projectId,
               amount: perDevShare,
@@ -612,6 +672,7 @@ export class FinanceService {
       // 4. Audit Log
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -636,4 +697,3 @@ export class FinanceService {
     })
   }
 }
-

@@ -39,4 +39,3 @@ export class UpdateSecurityAlertStatusDto {
   @IsString()
   status: string // 'open' | 'investigating' | 'patch_in_progress' | 'resolved'
 }
-

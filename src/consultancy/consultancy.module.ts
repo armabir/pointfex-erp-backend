@@ -8,4 +8,3 @@ import { ConsultancyController } from './consultancy.controller'
   exports: [ConsultancyService],
 })
 export class ConsultancyModule {}
-

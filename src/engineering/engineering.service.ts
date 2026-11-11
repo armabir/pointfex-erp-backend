@@ -1,10 +1,8 @@
+import { getCurrentRequestIp } from '../common/ip-address.util'
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../common/prisma.service'
-import {
-  CreateSecurityAlertDto,
-  UpdateSecurityAlertStatusDto,
-} from './dto/engineering.dto'
-import { DemoUser } from '../common/demo-identity.guard'
+import { CreateSecurityAlertDto, UpdateSecurityAlertStatusDto } from './dto/engineering.dto'
+import { AuthenticatedUser } from '../common/auth-user.interface'
 
 @Injectable()
 export class EngineeringService {
@@ -43,7 +41,7 @@ export class EngineeringService {
     })
   }
 
-  async createSecurityAlert(dto: CreateSecurityAlertDto, actor: DemoUser) {
+  async createSecurityAlert(dto: CreateSecurityAlertDto, actor: AuthenticatedUser) {
     const project = await this.prisma.project.findUnique({ where: { id: dto.projectId } })
     if (!project) throw new NotFoundException(`Project "${dto.projectId}" not found`)
 
@@ -68,6 +66,7 @@ export class EngineeringService {
 
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -88,7 +87,11 @@ export class EngineeringService {
     })
   }
 
-  async updateSecurityAlertStatus(id: string, dto: UpdateSecurityAlertStatusDto, actor: DemoUser) {
+  async updateSecurityAlertStatus(
+    id: string,
+    dto: UpdateSecurityAlertStatusDto,
+    actor: AuthenticatedUser,
+  ) {
     const alert = await this.prisma.securityAlert.findUnique({
       where: { id },
       include: { project: true },
@@ -106,6 +109,7 @@ export class EngineeringService {
 
       await tx.auditLog.create({
         data: {
+          ipAddress: getCurrentRequestIp(),
           actorId: actor.id,
           actorName: actor.id,
           actorEmail: `${actor.id}@pointfex.internal`,
@@ -138,4 +142,3 @@ export class EngineeringService {
     })
   }
 }
-

@@ -1,12 +1,11 @@
 import { Controller, Get, Post, Param, Body, UseGuards } from '@nestjs/common'
 import { PositionsService } from './positions.service'
 import { AssignPositionDto } from './dto/assign-position.dto'
-import { DemoIdentityGuard } from '../common/demo-identity.guard'
-import { RolesGuard } from '../common/roles.guard'
-import { Roles } from '../common/roles.decorator'
+import { PermissionsGuard } from '../common/permissions.guard'
+import { RequirePermissions } from '../common/require-permissions.decorator'
 
 @Controller('positions')
-@UseGuards(DemoIdentityGuard, RolesGuard)
+@UseGuards(PermissionsGuard)
 export class PositionsController {
   constructor(private readonly positionsService: PositionsService) {}
 
@@ -21,9 +20,8 @@ export class PositionsController {
   }
 
   @Post('assignments')
-  @Roles('cto', 'chro', 'ceo')
+  @RequirePermissions('positions:assign')
   assignPosition(@Body() dto: AssignPositionDto) {
     return this.positionsService.assignPosition(dto)
   }
 }
-

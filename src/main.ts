@@ -1,87 +1,85 @@
 import { NestFactory } from '@nestjs/core'
+import { NestExpressApplication } from '@nestjs/platform-express'
+import { ConfigService } from '@nestjs/config'
 import { ValidationPipe, Logger } from '@nestjs/common'
+import * as cookieParser from 'cookie-parser'
+import helmet from 'helmet'
 import { AppModule } from './app.module'
 
 async function bootstrap() {
   const logger = new Logger('PointfexERP')
-  const app = await NestFactory.create(AppModule)
+  const app = await NestFactory.create<NestExpressApplication>(AppModule)
+  const configService = app.get(ConfigService)
 
-  // Configure CORS for local development, Vercel deployments, and Cloudflare Workers/Pages
-  const configuredOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
-    : [
-        'http://localhost:5173',
-        'http://127.0.0.1:5173',
-        'https://pointfex-erp-frontend.vercel.app',
-        'https://pointfex-erp.armabir1.workers.dev',
-      ]
+  // Honor X-Forwarded-For from first reverse proxy (Nginx / Vite / Load Balancer)
+  app.set('trust proxy', 1)
 
-  // Regex for any Vercel deployment preview or production domain
-  const vercelOriginRegex = /^https:\/\/[a-zA-Z0-9_.-]+\.vercel\.app$/
-  // Regex for Cloudflare workers / pages
-  const workersDevRegex = /^https:\/\/[a-zA-Z0-9_.-]+\.(workers\.dev|pages\.dev)$/
-  // Regex for localhost on any port
-  const localhostRegex = /^http:\/\/(localhost|127\.0\.0\.1)(:[0-9]+)?$/
+  // Parse HttpOnly authentication cookies
+  app.use(cookieParser())
+
+  // Security headers and strict Content Security Policy via Helmet
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:', 'https://images.unsplash.com'],
+          connectSrc: ["'self'"],
+          fontSrc: ["'self'", 'data:'],
+          objectSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+        },
+      },
+      crossOriginResourcePolicy: { policy: 'same-origin' },
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    }),
+  )
+
+  // Strictly enforce whitelisted CORS origins configured via environment
+  const corsRaw = configService.getOrThrow<string>('CORS_ORIGIN')
+  const allowedOrigins = corsRaw
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0 && origin !== '*')
 
   app.enableCors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (curl, mobile, backend-to-backend)
-      if (!origin) {
-        return callback(null, true)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true)
+        return
       }
-
-      // Check explicit configured origins, wildcards, localhost, Vercel, or Workers
-      if (
-        configuredOrigins.includes('*') ||
-        configuredOrigins.includes(origin) ||
-        origin === 'https://pointfex-erp.armabir1.workers.dev' ||
-        localhostRegex.test(origin) ||
-        vercelOriginRegex.test(origin) ||
-        workersDevRegex.test(origin)
-      ) {
-        return callback(null, true)
-      }
-
-      // Safe fallback that reflects origin for seamless cloud prototype integration
-      return callback(null, true)
+      callback(new Error(`Origin "${origin}" is not allowed by CORS policy`), false)
     },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'x-demo-user-id',
-      'x-demo-role',
-      'Accept',
-      'Origin',
-      'X-Requested-With',
-    ],
-    exposedHeaders: ['x-demo-user-id', 'x-demo-role'],
     credentials: true,
-    preflightContinue: false,
-    optionsSuccessStatus: 204,
   })
 
-  // Global API Prefix (except root landing /)
-  app.setGlobalPrefix('api', {
-    exclude: ['/'],
-  })
+  // Global API Prefix
+  app.setGlobalPrefix('api')
 
-  // Global DTO Validation & Transformation Pipe
+  // Strict Global DTO Validation, Whitelisting & Transformation Pipe
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
+      forbidNonWhitelisted: true,
       transform: true,
-      forbidNonWhitelisted: false,
       transformOptions: {
         enableImplicitConversion: true,
       },
     }),
   )
 
-  const port = process.env.PORT || 3000
-  await app.listen(port)
-  logger.log(`🚀 Pointfex ERP Backend is running on: http://localhost:${port}/api`)
+  const portValue = Number(configService.getOrThrow<string>('PORT'))
+  if (!Number.isInteger(portValue) || portValue <= 0) {
+    throw new Error('PORT environment variable must be a valid positive integer.')
+  }
+
+  await app.listen(portValue)
+  logger.log(`🚀 Pointfex ERP Backend is running on port ${portValue} (/api)`)
 }
 
 bootstrap()
-

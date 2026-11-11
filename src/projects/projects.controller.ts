@@ -7,20 +7,16 @@ import {
   UpdateMilestoneStatusDto,
   AssignProjectTeamDto,
 } from './dto/project.dto'
-import { DemoIdentityGuard } from '../common/demo-identity.guard'
-import { RolesGuard } from '../common/roles.guard'
-import { Roles } from '../common/roles.decorator'
+import { PermissionsGuard } from '../common/permissions.guard'
+import { RequirePermissions } from '../common/require-permissions.decorator'
 
 @Controller('projects')
-@UseGuards(DemoIdentityGuard, RolesGuard)
+@UseGuards(PermissionsGuard)
 export class ProjectsController {
   constructor(private readonly projectsService: ProjectsService) {}
 
   @Get()
-  findAll(
-    @Query('teamId') teamId?: string,
-    @Query('status') status?: string,
-  ) {
+  findAll(@Query('teamId') teamId?: string, @Query('status') status?: string) {
     return this.projectsService.findAll(teamId, status)
   }
 
@@ -30,25 +26,25 @@ export class ProjectsController {
   }
 
   @Post()
-  @Roles('cto', 'ceo')
+  @RequirePermissions('projects:create')
   create(@Body() dto: CreateProjectDto) {
     return this.projectsService.create(dto)
   }
 
   @Patch(':id')
-  @Roles('cto', 'pm', 'ceo')
+  @RequirePermissions('projects:update')
   update(@Param('id') id: string, @Body() dto: UpdateProjectDto) {
     return this.projectsService.update(id, dto)
   }
 
   @Post(':id/milestones')
-  @Roles('cto', 'pm', 'ceo')
+  @RequirePermissions('milestones:create')
   addMilestone(@Param('id') id: string, @Body() dto: CreateMilestoneDto) {
     return this.projectsService.addMilestone(id, dto)
   }
 
   @Patch(':id/milestones/:milestoneId')
-  @Roles('cto', 'pm', 'ceo')
+  @RequirePermissions('milestones:update')
   updateMilestoneStatus(
     @Param('id') id: string,
     @Param('milestoneId') milestoneId: string,
@@ -58,9 +54,8 @@ export class ProjectsController {
   }
 
   @Post(':id/assign-team')
-  @Roles('cto', 'ceo')
+  @RequirePermissions('projects:assign_team')
   assignTeam(@Param('id') id: string, @Body() dto: AssignProjectTeamDto) {
     return this.projectsService.assignTeam(id, dto)
   }
 }
-
