@@ -1,0 +1,24 @@
+name: Keep Backend Alive
+
+on:
+  schedule:
+    # Runs every 5 minutes to prevent Vercel Serverless & Neon DB cold starts
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+jobs:
+  keep-alive:
+    name: Ping Health Endpoint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Pointfex ERP Backend
+        run: |
+          echo "Pinging https://pointfex-erp-backend.vercel.app/api/health..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://pointfex-erp-backend.vercel.app/api/health)
+          echo "Response HTTP Status: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            echo "Backend is live and database is warm!"
+          else
+            echo "Unexpected status code: $HTTP_STATUS"
+            exit 1
+          fi
