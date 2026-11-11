@@ -1,0 +1,769 @@
+// Pointfex ERP - Relational Prisma Schema
+// PostgreSQL (Neon)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --------------------------------------------------------------------------
+// 1. ORGANIZATIONAL STRUCTURE: EMPLOYEES & POSITIONS
+// --------------------------------------------------------------------------
+
+model Employee {
+  id           String   @id
+  name         String
+  email        String   @unique
+  passwordHash String   @default("")
+  title        String
+  initials     String
+  avatarUrl    String?
+  status       String   @default("online") // 'online' | 'offline' | 'away'
+  isSuspended  Boolean  @default(false)
+  skills       String[]
+  timezone     String?  @default("UTC+6 (BST)")
+  github       String?
+  phone        String?
+  location     String?  @default("Dhaka, Bangladesh")
+  bio          String?
+  joinedSprint String?  @default("Sprint 1")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relationships
+  positionAssignments  PositionAssignment[]
+  teamMemberships      TeamMembership[]
+  wallet               EmployeeWallet?
+  createdTasks         Task[]               @relation("TaskCreator")
+  assignedTasks        Task[]               @relation("TaskAssignee")
+  taskSubmissions      TaskSubmission[]
+  taskComments         TaskComment[]
+  performanceRecords   PerformanceRecord[]
+  authoredReports      Report[]             @relation("ReportAuthor")
+  targetedReports      Report[]             @relation("ReportTarget")
+  auditLogs            AuditLog[]
+  requestedConsultancy ConsultancyRequest[] @relation("ConsultancyRequester")
+  assignedConsultancy  ConsultancyRequest[] @relation("ConsultancyAdvisor")
+  employeeRoles        EmployeeRole[]
+  employeePermissions  EmployeePermission[]
+  requestedAccessChanges AccessChangeRequest[] @relation("AccessRequestRequester")
+  targetedAccessChanges  AccessChangeRequest[] @relation("AccessRequestTarget")
+  approvedAccessChanges  AccessChangeRequest[] @relation("AccessRequestApprover")
+  refreshTokens          RefreshToken[]
+
+  @@map("employees")
+}
+
+model Position {
+  id           String   @id
+  code         String   @unique // e.g., 'CEO', 'CTO', 'CFO', 'CHRO', 'PM-01'..'PM-06', 'DEV-01'..'DEV-24'
+  title        String
+  department   String   // 'Executive', 'Project Management', 'Engineering'
+  roleCategory String   // 'ceo' | 'cto' | 'cfo' | 'chro' | 'pm' | 'developer'
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignments PositionAssignment[]
+  managedTeam Team?                @relation("TeamPmPosition")
+
+  @@map("positions")
+}
+
+model PositionAssignment {
+  id         String    @id @default(cuid())
+  employeeId String
+  positionId String
+  startDate  DateTime  @default(now())
+  endDate    DateTime?
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  position Position @relation(fields: [positionId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([positionId])
+  @@map("position_assignments")
+}
+
+// --------------------------------------------------------------------------
+// 2. SQUADS & SQUAD MEMBERSHIP
+// --------------------------------------------------------------------------
+
+model Team {
+  id                String   @id
+  name              String   // e.g. 'Team Alpha', 'Team Bravo'
+  code              String   @unique // 'TA', 'TB', 'TC', 'TD', 'TE', 'TF'
+  focus             String
+  pmPositionId      String   @unique // Unique required FK: 1 PM position manages exactly 1 team
+  color             String?
+  currentSprintWeek Int      @default(3)
+  totalSprintWeeks  Int      @default(5)
+  health            String   @default("on_track") // 'on_track' | 'needs_attention' | 'delayed'
+  weeklyVelocity    Int      @default(40)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  pmPosition   Position             @relation("TeamPmPosition", fields: [pmPositionId], references: [id])
+  memberships  TeamMembership[]
+  teamProjects TeamProject[]
+  reports      Report[]
+  consultancies ConsultancyRequest[]
+
+  @@map("teams")
+}
+
+model TeamMembership {
+  id         String    @id @default(cuid())
+  teamId     String
+  employeeId String
+  isLead     Boolean   @default(false)
+  roleInTeam String    @default("developer") // 'lead_developer' | 'developer'
+  joinedAt   DateTime  @default(now())
+  leftAt     DateTime?
+  isActive   Boolean   @default(true)
+
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([teamId])
+  @@index([employeeId])
+  @@map("team_memberships")
+}
+
+// --------------------------------------------------------------------------
+// 3. PROJECTS & DELIVERABLES
+// --------------------------------------------------------------------------
+
+model Project {
+  id                   String    @id
+  name                 String
+  code                 String    @unique
+  description          String
+  status               String    @default("in_progress") // 'planning' | 'in_progress' | 'completed' | 'on_hold'
+  progress             Int       @default(0)
+  health               String    @default("on_track") // 'on_track' | 'needs_attention' | 'at_risk' | 'delayed'
+  startDate            DateTime
+  deadline             DateTime
+  totalWeeks           Int       @default(5)
+  currentWeek          Int       @default(3)
+  budget               Decimal   @default(0) @db.Decimal(14, 2)
+  allocatedBudget      Decimal   @default(0) @db.Decimal(14, 2)
+  clientRevenue        Decimal   @default(0) @db.Decimal(14, 2)
+  client               String?
+  priority             String    @default("Medium Priority")
+  repositoryUrl        String?
+  demoUrl              String?
+  tags                 String[]
+  color                String?
+  srsTitle             String?
+  srsUrl               String?
+  srsVersion           String?
+  srsOverview          String?
+  srsRequirementsCount Int       @default(0)
+  srsLastUpdated       DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  teamProjects          TeamProject[]
+  milestones            ProjectMilestone[]
+  tasks                 Task[]
+  financialTransactions FinancialTransaction[]
+  budgetRequests        BudgetRequest[]
+  codeQuality           CodeQualityRecord?
+  securityAlerts        SecurityAlert[]
+  testRuns              TestRun[]
+  consultancyRequests   ConsultancyRequest[]
+
+  @@map("projects")
+}
+
+model TeamProject {
+  id           String    @id @default(cuid())
+  teamId       String
+  projectId    String
+  assignedAt   DateTime  @default(now())
+  unassignedAt DateTime?
+  isActive     Boolean   @default(true)
+
+  team    Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([teamId])
+  @@index([projectId])
+  @@map("team_projects")
+}
+
+model ProjectMilestone {
+  id                String   @id
+  projectId         String
+  title             String
+  dueDate           DateTime
+  status            String   @default("pending") // 'completed' | 'in_progress' | 'pending'
+  progress          Int      @default(0)
+  sprintWeek        Int?
+  payoutAmount      Decimal? @db.Decimal(14, 2)
+  deliverablesCount Int      @default(0)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+
+  @@index([projectId])
+  @@map("project_milestones")
+}
+
+// --------------------------------------------------------------------------
+// 4. TASKS, CHECKLISTS, SUBMISSIONS, & COMMENTS
+// --------------------------------------------------------------------------
+
+model Task {
+  id             String   @id
+  title          String
+  description    String?
+  projectId      String
+  milestoneId    String?
+  creatorId      String
+  assigneeId     String
+  status         String   @default("todo") // 'todo' | 'in_progress' | 'in_review' | 'completed' | 'blocked'
+  priority       String   @default("medium") // 'urgent' | 'high' | 'medium' | 'low'
+  dueDate        DateTime
+  estimatedHours Decimal  @default(8) @db.Decimal(6, 2)
+  loggedHours    Decimal  @default(0) @db.Decimal(6, 2)
+  tags           String[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  milestone   ProjectMilestone?   @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  creator     Employee            @relation("TaskCreator", fields: [creatorId], references: [id])
+  assignee    Employee            @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  checklist   TaskChecklistItem[]
+  submissions TaskSubmission[]
+  comments    TaskComment[]
+
+  @@index([projectId])
+  @@index([assigneeId])
+  @@index([creatorId])
+  @@map("tasks")
+}
+
+model TaskChecklistItem {
+  id        String  @id @default(cuid())
+  taskId    String
+  text      String
+  completed Boolean @default(false)
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("task_checklist_items")
+}
+
+model TaskSubmission {
+  id           String    @id @default(cuid())
+  taskId       String
+  employeeId   String
+  prUrl        String?
+  demoUrl      String?
+  notes        String?
+  status       String    @default("submitted") // 'submitted' | 'approved' | 'rejected'
+  feedback     String?
+  reviewedById String?
+  submittedAt  DateTime  @default(now())
+  reviewedAt   DateTime?
+
+  task     Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([employeeId])
+  @@map("task_submissions")
+}
+
+model TaskComment {
+  id        String   @id @default(cuid())
+  taskId    String
+  authorId  String
+  content   String
+  createdAt DateTime @default(now())
+
+  task   Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author Employee @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([authorId])
+  @@map("task_comments")
+}
+
+// --------------------------------------------------------------------------
+// 5. TREASURY, WALLETS, & FINANCIAL LEDGER
+// --------------------------------------------------------------------------
+
+model CompanyTreasury {
+  id                     String   @id @default("singleton")
+  initialCapital         Decimal  @db.Decimal(14, 2) // ৳500,000.00
+  totalApprovedBudgets   Decimal  @db.Decimal(14, 2) // ৳380,000.00
+  totalDistributedToDevs Decimal  @db.Decimal(14, 2) // ৳245,600.00
+  unallocatedReserves    Decimal  @db.Decimal(14, 2) // ৳120,000.00
+  totalClientRevenue     Decimal  @db.Decimal(14, 2) // ৳740,000.00
+  currency               String   @default("BDT")
+  updatedAt              DateTime @updatedAt
+
+  @@map("company_treasury")
+}
+
+model BudgetRequest {
+  id              String    @id @default(cuid())
+  projectId       String
+  requesterId     String    // PM employee id
+  requestedAmount Decimal   @db.Decimal(14, 2)
+  approvedAmount  Decimal?  @db.Decimal(14, 2)
+  reason          String
+  status          String    @default("pending") // 'pending' | 'approved' | 'rejected'
+  feedback        String?
+  reviewedById    String?
+  requestedAt     DateTime  @default(now())
+  reviewedAt      DateTime?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("budget_requests")
+}
+
+model EmployeeWallet {
+  id                   String    @id @default(cuid())
+  employeeId           String    @unique
+  balance              Decimal   @default(0) @db.Decimal(14, 2)
+  currency             String    @default("BDT")
+  currencySymbol       String    @default("৳")
+  pendingEscrow        Decimal   @default(0) @db.Decimal(14, 2)
+  totalEarnedToDate    Decimal   @default(0) @db.Decimal(14, 2)
+  totalPenalties       Decimal   @default(0) @db.Decimal(14, 2)
+  hourlyRateEquivalent Decimal?  @db.Decimal(10, 2)
+  sprintBonusEarned    Decimal   @default(0) @db.Decimal(14, 2)
+  totalSpendings       Decimal   @default(0) @db.Decimal(14, 2)
+  lastPayoutDate       DateTime?
+  nextScheduledPayout  DateTime?
+
+  employee     Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  transactions FinancialTransaction[]
+
+  @@map("employee_wallets")
+}
+
+model FinancialTransaction {
+  id          String   @id @default(cuid())
+  walletId    String?
+  employeeId  String?
+  projectId   String?
+  milestoneId String?
+  amount      Decimal  @db.Decimal(14, 2)
+  type        String   // 'milestone_payout' | 'penalty' | 'bonus' | 'advance_disbursement' | 'budget_allocation' | 'client_revenue_share'
+  description String
+  status      String   @default("completed") // 'completed' | 'deducted' | 'pending' | 'allocated'
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  wallet  EmployeeWallet? @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  project Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([walletId])
+  @@index([projectId])
+  @@map("financial_transactions")
+}
+
+// --------------------------------------------------------------------------
+// 6. PERFORMANCE, RECOGNITION, & CULTURE
+// --------------------------------------------------------------------------
+
+model PerformanceRecord {
+  id                 String    @id @default(cuid())
+  employeeId         String
+  overallScore       Decimal   @db.Decimal(5, 2)
+  deliverySpeed      Decimal?  @db.Decimal(5, 2)
+  codeQuality        Decimal?  @db.Decimal(5, 2)
+  reliability        Decimal?  @db.Decimal(5, 2)
+  collaboration      Decimal?  @db.Decimal(5, 2)
+  attendanceRate     Decimal?  @db.Decimal(5, 2)
+  satisfactionIndex  Decimal?  @db.Decimal(3, 2)
+  performanceTier    String    @default("strong_contributor") // 'top_performer' | 'strong_contributor' | 'needs_support'
+  evaluationNotes    String?
+  disciplinaryNotes  String?
+  strengths          String[]
+  improvements       String[]
+  weeklyHours        Int[]
+  lastEvaluationDate DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@map("performance_records")
+}
+
+// --------------------------------------------------------------------------
+// 7. REPORTS, GRIEVANCES, & AUDIT LOGS
+// --------------------------------------------------------------------------
+
+model Report {
+  id             String    @id @default(cuid())
+  authorId       String
+  teamId         String?
+  projectId      String?
+  type           String    // 'project_submission' | 'complaint' | 'pm_report' | 'cto_report'
+  category       String?
+  title          String
+  description    String
+  docsUrl        String?
+  status         String    @default("pending") // 'pending' | 'under_review' | 'approved' | 'rejected' | 'resolved' | 'dismissed' | 'forwarded_to_c_level' | 'under_investigation'
+  feedback       String?
+  complainTo     String?
+  recipient      String?
+  isConfidential Boolean   @default(false)
+  confidentialTo String?   // 'chro' | 'ceo'
+  mediationNotes String?
+  targetUserId   String?
+  forwardedTo    String?
+  forwardedBy    String?
+  forwardedAt    DateTime?
+  pmEndorsement  String?
+  submittedAt    DateTime  @default(now())
+  resolvedAt     DateTime?
+
+  author     Employee  @relation("ReportAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  targetUser Employee? @relation("ReportTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  team       Team?     @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@index([authorId])
+  @@index([isConfidential])
+  @@map("reports")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorId     String?
+  actorName   String
+  actorEmail  String
+  actorRole   String
+  action      String
+  actionCode  String
+  severity    String   // 'INFO' | 'WARNING' | 'CRITICAL' | 'SUCCESS'
+  entityType  String
+  entityId    String
+  entityTitle String?
+  description String
+  category    String   // 'task' | 'finance' | 'security' | 'people' | 'team' | 'git' | 'governance'
+  badgeColor  String?
+  ipAddress   String?
+  payload     Json?
+  timestamp   DateTime @default(now())
+
+  actor Employee? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([severity])
+  @@index([category])
+  @@map("audit_logs")
+}
+
+// --------------------------------------------------------------------------
+// 8. ENGINEERING: CODE QUALITY, SECURITY, & TESTS
+// --------------------------------------------------------------------------
+
+model CodeQualityRecord {
+  id                   String   @id @default(cuid())
+  projectId            String   @unique
+  complianceScore      Int      @default(95)
+  testCoverage         Int      @default(85)
+  techDebtHours        Int      @default(10)
+  codeSmellsCount      Int      @default(5)
+  bugsDetected         Int      @default(0)
+  vulnerabilitiesCount Int      @default(0)
+  lastAnalysis         DateTime @default(now())
+  status               String   @default("passed") // 'passed' | 'warning' | 'failed'
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("code_quality_records")
+}
+
+model SecurityAlert {
+  id             String    @id @default(cuid())
+  projectId      String
+  title          String
+  severity       String    // 'critical' | 'high' | 'medium' | 'low'
+  category       String    // 'dependency' | 'auth' | 'injection' | 'encryption' | 'infrastructure'
+  status         String    @default("open") // 'open' | 'investigating' | 'patch_in_progress' | 'resolved'
+  detectedAt     DateTime  @default(now())
+  resolvedAt     DateTime?
+  assignedPmId   String?
+  cveOrPackage   String?
+  description    String
+  recommendation String
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([severity])
+  @@map("security_alerts")
+}
+
+model TestRun {
+  id              String   @id @default(cuid())
+  projectId       String
+  name            String
+  totalTests      Int
+  passed          Int
+  failed          Int
+  skipped         Int
+  duration        String
+  coveragePercent Decimal  @db.Decimal(5, 2)
+  lastRun         DateTime @default(now())
+  status          String   @default("passed") // 'passed' | 'failed' | 'warning'
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("test_runs")
+}
+
+// --------------------------------------------------------------------------
+// 9. CONSULTANCY & GOVERNANCE
+// --------------------------------------------------------------------------
+
+model ConsultancyRequest {
+  id                     String    @id @default(cuid())
+  title                  String
+  requesterId            String
+  teamId                 String
+  projectId              String
+  category               String
+  description            String
+  urgency                String    @default("medium") // 'critical' | 'high' | 'medium' | 'low'
+  status                 String    @default("submitted") // 'submitted' | 'under_review' | 'accepted' | 'assigned' | 'in_progress' | 'completed' | 'rejected'
+  assignedConsultantId   String?
+  assignedConsultantName String?
+  estimatedHours         Decimal?  @db.Decimal(6, 2)
+  feeBDT                 Decimal?  @db.Decimal(14, 2)
+  feeUSD                 Decimal?  @db.Decimal(10, 2)
+  requestedAt            DateTime  @default(now())
+  targetDate             DateTime?
+  ctoNotes               String?
+  completedAt            DateTime?
+
+  requester  Employee  @relation("ConsultancyRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  consultant Employee? @relation("ConsultancyAdvisor", fields: [assignedConsultantId], references: [id], onDelete: SetNull)
+  team       Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([requesterId])
+  @@index([projectId])
+  @@map("consultancy_requests")
+}
+
+model ExecutiveDirective {
+  id           String    @id @default(cuid())
+  title        String
+  description  String?
+  assigneeRole String    // 'pm' | 'cto' | 'cfo' | 'chro' | 'developer'
+  assigneeId   String?
+  priority     String    @default("urgent")
+  dueDate      DateTime?
+  tags         String[]
+  projectId    String?
+  status       String    @default("active")
+  issuedById   String
+  createdAt    DateTime  @default(now())
+
+  @@map("executive_directives")
+}
+
+model ExecutiveDecision {
+  id           String   @id @default(cuid())
+  actionType   String
+  entityId     String
+  notes        String?
+  ratifiedById String
+  ratifiedAt   DateTime @default(now())
+
+  @@map("executive_decisions")
+}
+
+model Announcement {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  authorId  String
+  category  String   @default("company") // 'company' | 'pm' | 'critical'
+  priority  String   @default("normal")  // 'urgent' | 'normal' | 'low'
+  pinned    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("announcements")
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  userId     String
+  title      String
+  message    String
+  type       String   // 'comment' | 'pr' | 'financial' | 'deadline' | 'milestone'
+  read       Boolean  @default(false)
+  entityType String?
+  entityId   String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@map("notifications")
+}
+
+// --------------------------------------------------------------------------
+// 10. DYNAMIC PERMISSION-BASED ACCESS CONTROL (PBAC / RBAC)
+// --------------------------------------------------------------------------
+
+model Permission {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  resource    String
+  action      String
+  module      String
+  description String
+  isSensitive Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rolePermissions     RolePermission[]
+  employeePermissions EmployeePermission[]
+
+  @@unique([resource, action])
+  @@index([resource])
+  @@index([module])
+  @@map("permissions")
+}
+
+model Role {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  name            String   @unique
+  description     String?
+  isSystemDefault Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  rolePermissions     RolePermission[]
+  employeeRoles       EmployeeRole[]
+  accessChangeRequests AccessChangeRequest[]
+
+  @@index([isActive])
+  @@map("roles")
+}
+
+model RolePermission {
+  id           String   @id @default(cuid())
+  roleId       String
+  permissionId String
+  grantedById  String?
+  grantedAt    DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model EmployeeRole {
+  id           String    @id @default(cuid())
+  employeeId   String
+  roleId       String
+  assignedById String?
+  assignedAt   DateTime  @default(now())
+  expiresAt    DateTime?
+  isActive     Boolean   @default(true)
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  role     Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, roleId])
+  @@index([employeeId, isActive])
+  @@index([roleId, isActive])
+  @@map("employee_roles")
+}
+
+model EmployeePermission {
+  id           String    @id @default(cuid())
+  employeeId   String
+  permissionId String
+  grantedById  String?
+  reason       String?
+  grantedAt    DateTime  @default(now())
+  expiresAt    DateTime?
+  isActive     Boolean   @default(true)
+
+  employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, permissionId])
+  @@index([employeeId, isActive])
+  @@index([permissionId, isActive])
+  @@map("employee_permissions")
+}
+
+enum AccessRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model AccessChangeRequest {
+  id               String              @id @default(cuid())
+  requesterId      String
+  targetEmployeeId String
+  requestedRoleId  String
+  status           AccessRequestStatus @default(PENDING)
+  reason           String?
+  approvedById     String?
+  reviewedAt       DateTime?
+  reviewNotes      String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  requester      Employee  @relation("AccessRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  targetEmployee Employee  @relation("AccessRequestTarget", fields: [targetEmployeeId], references: [id], onDelete: Cascade)
+  requestedRole  Role      @relation(fields: [requestedRoleId], references: [id], onDelete: Cascade)
+  approvedBy     Employee? @relation("AccessRequestApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([targetEmployeeId, status])
+  @@index([status])
+  @@map("access_change_requests")
+}
+
+model RefreshToken {
+  id                  String    @id @default(cuid())
+  employeeId          String
+  tokenHash           String    @unique
+  familyId            String
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  replacedByTokenHash String?
+  ipAddress           String?
+  userAgent           String?
+  createdAt           DateTime  @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
