@@ -227,14 +227,14 @@ export class MailService {
     })
   }
 
-  async sendAdminResetTempPassword(params: {
+  async sendAdminResetLink(params: {
     to: string
     name: string
-    temporaryPassword: string
+    resetToken: string
     ttlHours?: number
   }) {
     const ttl = params.ttlHours ?? this.tempPasswordTtlHours
-    const loginUrl = `${this.frontendUrl}/login`
+    const resetUrl = `${this.frontendUrl}/reset-password?token=${encodeURIComponent(params.resetToken)}&onboarding=1`
     return this.sendEmail({
       to: params.to,
       subject: 'Pointfex ERP — Your Password Was Reset by an Administrator',
@@ -242,22 +242,36 @@ export class MailService {
         `Hello ${params.name},`,
         '',
         'An administrator has reset your Pointfex ERP password and revoked active sessions.',
-        `Temporary password: ${params.temporaryPassword}`,
-        `Sign in at: ${loginUrl}`,
-        `This temporary password expires in ${ttl} hours. You must choose a new password upon sign-in.`,
+        `Click this one-time link (valid for ${ttl} hours) to set your new password:`,
+        resetUrl,
+        '',
+        'This link can only be used once. After setting your password, you can sign in directly with Google or your new credentials.',
       ].join('\n'),
       html: `
         <div style="font-family:Inter,system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#111827;">
           <h2 style="margin:0 0 12px;">Administrator Password Reset</h2>
           <p>Hello ${this.escapeHtml(params.name)},</p>
-          <p>An administrator reset your Pointfex ERP password and revoked your active sessions. Use this temporary password to sign in:</p>
-          <div style="background:#F7F8FA;border:1px solid #E5E7EB;border-radius:8px;padding:12px 16px;margin:16px 0;font-family:monospace;font-size:15px;">
-            ${this.escapeHtml(params.temporaryPassword)}
-          </div>
-          <p><strong>Expires in:</strong> ${ttl} hours</p>
-          <p><a href="${this.escapeHtml(loginUrl)}" style="display:inline-block;background:#4F46E5;color:#FFFFFF;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">Sign in to Pointfex ERP</a></p>
+          <p>An administrator reset your Pointfex ERP password and revoked active sessions.</p>
+          <p>Click the button below to choose your new password. This link is valid for <strong>${ttl} hours</strong> and can be used <strong>once</strong>:</p>
+          <p><a href="${this.escapeHtml(resetUrl)}" style="display:inline-block;background:#4F46E5;color:#FFFFFF;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">Set New Password</a></p>
+          <p style="font-size:12px;color:#6B7280;">If you did not request this, contact your administrator immediately.</p>
         </div>
       `,
+    })
+  }
+
+  async sendAdminResetTempPassword(params: {
+    to: string
+    name: string
+    temporaryPassword?: string
+    resetToken?: string
+    ttlHours?: number
+  }) {
+    return this.sendAdminResetLink({
+      to: params.to,
+      name: params.name,
+      resetToken: params.resetToken || params.temporaryPassword || '',
+      ttlHours: params.ttlHours,
     })
   }
 

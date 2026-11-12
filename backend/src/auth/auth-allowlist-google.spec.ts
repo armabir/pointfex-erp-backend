@@ -208,6 +208,48 @@ describe('LoginAllowlistService, MailService, Recovery Codes & Google OAuth', ()
     await controller.googleCallback('auth_code', 'bad_state', undefined, expiredRes)
     expect(expiredRes.redirect.mock.calls[0][0]).toContain('oauthErrorCode=expired_link')
 
+    // Stateless code verification: state carries codeVerifier across serverless instances
+    const statelessJwt: any = {
+      sign: jest.fn((payload) => `signed_${payload.purpose}`),
+      signAsync: jest.fn(async (payload) => `signed_async_${payload?.purpose || 'token'}`),
+      verify: jest.fn((t) => {
+        if (t === 'stateless_state') {
+          return { purpose: 'google_oauth', nonce: 'nonce123', codeVerifier: 'verifier123' }
+        }
+        if (t === 'stateless_code') {
+          return { purpose: 'google_auth_code', sub: 'emp_dev_1' }
+        }
+        throw new Error('invalid')
+      }),
+    }
+    const statelessPrisma: any = {
+      employee: {
+        findUnique: jest.fn(async () => ({
+          id: 'emp_dev_1',
+          email: 'dev@pointfex.com',
+          name: 'Dev',
+          isSuspended: false,
+          mfaEnabled: false,
+          employeeRoles: [{ role: { id: 'r1', slug: 'developer', name: 'Developer', isSystemDefault: false } }],
+          positionAssignments: [],
+        })),
+        update: jest.fn(async () => ({})),
+      },
+      refreshToken: { create: jest.fn(async () => ({})) },
+      securitySession: { create: jest.fn(async () => ({})) },
+      $transaction: jest.fn(async (cb) => cb(statelessPrisma)),
+    }
+    const statelessAuth = new AuthService(statelessPrisma, statelessJwt, config)
+    const statelessController = new AuthController(statelessAuth)
+    const exchangeReq: any = { headers: {} }
+    const exchangeRes: any = { cookie: jest.fn() }
+    const exchangeResult = await statelessController.exchangeGoogleCode(
+      { code: 'stateless_code' },
+      exchangeReq,
+      exchangeRes,
+    )
+    expect(exchangeResult).toMatchObject({ authenticated: true, user: { id: 'emp_dev_1' } })
+
     const mail = new MailService(config)
     const sent = await mail.sendWelcomeTempPassword({
       to: 'dev@pointfex.com',

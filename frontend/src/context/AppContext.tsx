@@ -339,8 +339,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       myPermissionsRef.current = []
       setDirectPermissions([])
     setAuthzSnapshot(null)
-      if (window.location.pathname !== '/login') {
-        window.history.replaceState(null, '', '/login')
+      if (
+        window.location.pathname !== '/login' &&
+        !window.location.pathname.startsWith('/reset-password')
+      ) {
+        window.history.replaceState(null, '', '/login' + window.location.search)
       }
     })
 
@@ -376,8 +379,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (cancelled) return
         setAuthUser(null)
         setIsAuthChecking(false)
-        if (window.location.pathname !== '/login') {
-          window.history.replaceState(null, '', '/login')
+        if (
+          window.location.pathname !== '/login' &&
+          !window.location.pathname.startsWith('/reset-password')
+        ) {
+          window.history.replaceState(null, '', '/login' + window.location.search)
         }
       }
     }

@@ -74,5 +74,30 @@ describe('MailService', () => {
     expect(result).toEqual({ sent: false, provider: 'noop' })
     expect(nodemailer.createTransport).not.toHaveBeenCalled()
   })
+
+  it('sendAdminResetLink formats one-time setup URL and sends link without temporary password', async () => {
+    const mail = new MailService(
+      createConfig({
+        NODE_ENV: 'production',
+        FRONTEND_URL: 'https://pointfex.app',
+      }),
+    )
+    const spy = jest.spyOn(mail, 'sendEmail').mockResolvedValue({ sent: true, provider: 'noop' })
+
+    await mail.sendAdminResetLink({
+      to: 'user@example.com',
+      name: 'User',
+      resetToken: 'token_abc123',
+      ttlHours: 48,
+    })
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    const callArg = spy.mock.calls[0][0]
+    expect(callArg.to).toBe('user@example.com')
+    expect(callArg.subject).toContain('Password Was Reset')
+    expect(callArg.text).toContain('https://pointfex.app/reset-password?token=token_abc123&onboarding=1')
+    expect(callArg.html).toContain('https://pointfex.app/reset-password?token=token_abc123&amp;onboarding=1')
+    expect(callArg.text).not.toContain('Temporary password:')
+  })
 })
 

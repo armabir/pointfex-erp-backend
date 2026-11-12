@@ -239,9 +239,9 @@ export class EmployeeLifecycleService {
   }
 
   /**
-   * Admin-initiated password reset: generates a new random temporary password
-   * (dispatched via email/notification, NEVER returned to the admin), forces password
-   * change at next login, and revokes all active sessions & refresh tokens.
+   * Admin-initiated password reset: generates a one-time secure password setup link
+   * (dispatched via email, NEVER returning plaintext credentials), forces password
+   * setup via one-time activation link, and revokes all active sessions & refresh tokens.
    */
   async adminResetPassword(
     employeeId: string,
@@ -249,18 +249,19 @@ export class EmployeeLifecycleService {
     reason?: string,
   ) {
     const { employee } = await this.loadProtectedLifecycleTarget(employeeId, actor, 'demote')
-    const tempPassword = crypto.randomBytes(12).toString('base64url')
-    const nextHash = await bcrypt.hash(tempPassword, 12)
+    const rawResetToken = crypto.randomBytes(32).toString('base64url')
+    const inviteTokenHash = crypto.createHash('sha256').update(rawResetToken).digest('hex')
     const ttlHours = this.mailService?.tempPasswordTtlHours ?? 24
-    const tempPasswordExpiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000)
+    const resetLinkExpiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000)
 
     await this.prisma.$transaction(async (tx) => {
       await tx.employee.update({
         where: { id: employeeId },
         data: {
-          passwordHash: nextHash,
+          inviteTokenHash,
+          inviteTokenExpiresAt: resetLinkExpiresAt,
+          inviteTokenUsedAt: null,
           mustChangePassword: true,
-          tempPasswordExpiresAt,
           authVersion: { increment: 1 },
         },
       })
@@ -298,19 +299,26 @@ export class EmployeeLifecycleService {
       severity: 'CRITICAL',
       entityType: 'Employee',
       entityId: employeeId,
-      description: `Issued temporary password by email and revoked all sessions for ${employee.email}.`,
+      description: `Issued secure password setup link by email and revoked all sessions for ${employee.email}.`,
       category: 'security',
       reason: reason?.trim() || 'Administrative password reset',
     })
 
-    const mailResult = await this.mailService?.sendAdminResetTempPassword({
-      to: employee.email,
-      name: employee.name,
-      temporaryPassword: tempPassword,
-      ttlHours,
-    })
+    const mailResult = this.mailService?.sendAdminResetLink
+      ? await this.mailService.sendAdminResetLink({
+          to: employee.email,
+          name: employee.name,
+          resetToken: rawResetToken,
+          ttlHours,
+        })
+      : await this.mailService?.sendAdminResetTempPassword?.({
+          to: employee.email,
+          name: employee.name,
+          temporaryPassword: rawResetToken,
+          ttlHours,
+        })
 
-    // Never return the temporary password in the response payload
+    // Never return credentials or reset tokens in the response payload
     return {
       reset: true,
       employeeId,
@@ -318,7 +326,7 @@ export class EmployeeLifecycleService {
       sessionsRevoked: true,
       delivery: 'email',
       emailSent: mailResult?.sent ?? false,
-      expiresAt: tempPasswordExpiresAt.toISOString(),
+      expiresAt: resetLinkExpiresAt.toISOString(),
     }
   }
 

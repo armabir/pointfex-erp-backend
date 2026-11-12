@@ -1023,7 +1023,7 @@ export class AuthService {
     const codeVerifier = crypto.randomBytes(32).toString('base64url')
     const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url')
     const state = this.jwtService.sign(
-      { purpose: 'google_oauth', nonce },
+      { purpose: 'google_oauth', nonce, codeVerifier },
       { expiresIn: '10m' },
     )
     this.googlePkceChallenges.set(nonce, {
@@ -1066,17 +1066,20 @@ export class AuthService {
       return failRedirect('google_error', 'Missing Google authorization code or state.')
     }
 
-    let pkceEntry: { codeVerifier: string; nonce: string; expiresAt: number } | undefined
+    let codeVerifier: string | undefined
     try {
-      const statePayload = this.jwtService.verify<{ purpose?: string; nonce?: string }>(
-        params.state,
-      )
+      const statePayload = this.jwtService.verify<{
+        purpose?: string
+        nonce?: string
+        codeVerifier?: string
+      }>(params.state)
       if (statePayload.purpose !== 'google_oauth' || !statePayload.nonce) {
         return failRedirect('expired_link', 'Invalid Google sign-in link. Please try again.')
       }
-      pkceEntry = this.googlePkceChallenges.get(statePayload.nonce)
+      codeVerifier =
+        statePayload.codeVerifier || this.googlePkceChallenges.get(statePayload.nonce)?.codeVerifier
       this.googlePkceChallenges.delete(statePayload.nonce)
-      if (!pkceEntry || pkceEntry.expiresAt < Date.now()) {
+      if (!codeVerifier) {
         return failRedirect('expired_link', 'This Google sign-in link expired. Please try again.')
       }
     } catch {
@@ -1100,7 +1103,7 @@ export class AuthService {
           client_secret: clientSecret,
           redirect_uri: redirectUri,
           grant_type: 'authorization_code',
-          code_verifier: pkceEntry.codeVerifier,
+          code_verifier: codeVerifier,
         }).toString(),
       })
       if (!tokenRes.ok) {
@@ -1184,7 +1187,10 @@ export class AuthService {
         },
       })
 
-      const oneTimeCode = crypto.randomBytes(24).toString('base64url')
+      const oneTimeCode = this.jwtService.sign(
+        { sub: employee.id, purpose: 'google_auth_code' },
+        { expiresIn: '2m' },
+      )
       this.googleOneTimeCodes.set(oneTimeCode, {
         employeeId: employee.id,
         expiresAt: Date.now() + GOOGLE_CODE_TTL_MS,
@@ -1213,12 +1219,28 @@ export class AuthService {
         throw new UnauthorizedException('Google MFA challenge expired. Sign in with Google again.')
       }
     } else if (body.code) {
-      const entry = this.googleOneTimeCodes.get(body.code)
-      this.googleOneTimeCodes.delete(body.code)
-      if (!entry || entry.expiresAt < Date.now()) {
-        throw new UnauthorizedException('Google sign-in code is invalid or expired.')
+      try {
+        const payload = this.jwtService.verify<{ sub?: string; purpose?: string }>(body.code)
+        if (payload.purpose === 'google_auth_code' && payload.sub) {
+          employeeId = payload.sub
+        }
+      } catch {
+        // Fallback to in-memory code entry
+        const entry = this.googleOneTimeCodes.get(body.code)
+        if (entry && entry.expiresAt >= Date.now()) {
+          employeeId = entry.employeeId
+          this.googleOneTimeCodes.delete(body.code)
+        }
       }
-      employeeId = entry.employeeId
+      if (!employeeId) {
+        const entry = this.googleOneTimeCodes.get(body.code)
+        if (entry && entry.expiresAt >= Date.now()) {
+          employeeId = entry.employeeId
+          this.googleOneTimeCodes.delete(body.code)
+        } else {
+          throw new UnauthorizedException('Google sign-in code is invalid or expired.')
+        }
+      }
     }
 
     if (!employeeId) {

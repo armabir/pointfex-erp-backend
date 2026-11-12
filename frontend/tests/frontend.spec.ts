@@ -413,5 +413,40 @@ export function runFrontendSuite(): Array<{ name: string; pass: boolean }> {
     assert.equal(canAccessRoute('login-access', ['login_allowlist:manage']), true)
   })
 
+  test('auth preservation: AppContext and client protect reset-password tokens and routes', () => {
+    const appContextSource = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/context/AppContext.tsx'),
+      'utf8',
+    )
+    assert.ok(
+      appContextSource.includes("!window.location.pathname.startsWith('/reset-password')"),
+      'AppContext must not overwrite /reset-password on unauthenticated session bootstrap',
+    )
+    assert.ok(
+      appContextSource.includes("'/login' + window.location.search"),
+      'AppContext must preserve query parameters when redirecting to /login',
+    )
+
+    const clientSource = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/api/client.ts'),
+      'utf8',
+    )
+    assert.ok(
+      clientSource.includes("path.startsWith('/auth/reset-password')"),
+      'client.ts must mark /auth/reset-password as an auth lifecycle route',
+    )
+    assert.ok(
+      clientSource.includes("path.startsWith('/auth/google')"),
+      'client.ts must mark /auth/google as an auth lifecycle route',
+    )
+
+    const vercelConfig = JSON.parse(
+      fs.readFileSync(path.resolve(process.cwd(), 'vercel.json'), 'utf8'),
+    )
+    const rootRedirect = vercelConfig.redirects?.find((r: any) => r.source === '/')
+    assert.ok(rootRedirect, 'vercel.json must have a redirect for /')
+    assert.equal(rootRedirect.destination, '/login')
+  })
+
   return results
 }

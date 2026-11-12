@@ -1,4 +1,4 @@
-# Local Development Setup — Pointfex ERP (`v3.0.0-beta`)
+# Local Development Setup — Pointfex ERP (`v3.3.0-beta`)
 
 Follow these steps to run **Pointfex ERP** locally on Linux/macOS/WSL.
 
