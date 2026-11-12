@@ -46,7 +46,7 @@ jobs:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     needs: [backend, frontend]
     runs-on: ubuntu-latest
-    continue-on-error: true
+    environment: production
     steps:
       - uses: actions/checkout@v4
       - run: npm install --global vercel@65.14.0
