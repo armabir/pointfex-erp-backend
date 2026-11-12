@@ -45,7 +45,7 @@ export const envValidationSchema = Joi.object({
     'any.required': 'JWT_SECRET is required.',
   }),
   JWT_EXPIRES_IN: Joi.string().default('15m'),
-  JWT_REFRESH_EXPIRES_DAYS: Joi.number().integer().min(1).max(90).default(7),
+  JWT_REFRESH_EXPIRES_DAYS: Joi.number().integer().min(1).max(90).default(3),
   COOKIE_SECURE: Joi.string().valid('true', 'false').optional(),
   COOKIE_SAMESITE: Joi.string().valid('strict', 'lax', 'none').optional(),
   AUTHZ_MODE: Joi.string().valid('enforce', 'shadow', 'legacy').default('shadow'),
