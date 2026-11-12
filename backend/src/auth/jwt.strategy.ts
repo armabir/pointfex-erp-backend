@@ -14,6 +14,7 @@ export interface JwtPayload {
   employeeId: string
   email: string
   role: string
+  authVersion?: number
 }
 
 const ROLE_PRIORITY = ['ceo', 'cto', 'cfo', 'chro', 'cpo', 'pm', 'developer']
@@ -72,6 +73,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         mustChangePassword: true,
         mustEnrollMfa: true,
         mfaEnabled: true,
+        authVersion: true,
         employeeRoles: {
           where: { isActive: true, role: { isActive: true } },
           select: { role: { select: { slug: true, isSystemDefault: true } } },
@@ -89,6 +91,16 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
 
     if (employee.isSuspended) {
       throw new ForbiddenException('Account Suspended. Contact HR.')
+    }
+
+    if (
+      payload.authVersion !== undefined &&
+      employee.authVersion !== undefined &&
+      employee.authVersion !== payload.authVersion
+    ) {
+      throw new UnauthorizedException(
+        'Session invalidated because your account signed in on another device.',
+      )
     }
 
     const activeSlugs = employee.employeeRoles.map((er) => er.role.slug)

@@ -323,5 +323,130 @@ describe('Phase 2: CEO-only Allowlist, Delegation Block & Allowlist-Driven Onboa
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException)
   }, 15000)
+
+  it('enforces max 2 forgot-password requests per week, max 5 per month, and requires MFA enabled', async () => {
+    const { AuthService } = require('./auth.service')
+    const { HttpException, ForbiddenException } = require('@nestjs/common')
+
+    let mfaEnabled = false
+    const auditTimestamps: Date[] = []
+    const prisma: any = {
+      employee: {
+        findUnique: jest.fn(async () => ({
+          id: 'emp_dev_1',
+          name: 'Dev User',
+          email: 'dev@pointfex.com',
+          isSuspended: false,
+          mfaEnabled,
+        })),
+      },
+      auditLog: {
+        count: jest.fn(async ({ where }: any) => {
+          const gte: Date = where.timestamp.gte
+          return auditTimestamps.filter((d) => d.getTime() >= gte.getTime()).length
+        }),
+      },
+    }
+    const jwt: any = { sign: jest.fn(() => 'reset-jwt') }
+    const mail: any = { sendPasswordResetLink: jest.fn(async () => ({ sent: true })) }
+    const auditLogger: any = {
+      log: jest.fn(async () => {
+        auditTimestamps.push(new Date())
+      }),
+    }
+
+    const auth = new AuthService(prisma, jwt, undefined, auditLogger, undefined, undefined, mail)
+
+    // Blocked when MFA is disabled
+    await expect(auth.forgotPassword('dev@pointfex.com')).rejects.toBeInstanceOf(ForbiddenException)
+    expect(mail.sendPasswordResetLink).not.toHaveBeenCalled()
+
+    // 1st and 2nd requests in the same week succeed once MFA is enabled
+    mfaEnabled = true
+    await expect(auth.forgotPassword('dev@pointfex.com')).resolves.toMatchObject({ sent: true })
+    await expect(auth.forgotPassword('dev@pointfex.com')).resolves.toMatchObject({ sent: true })
+
+    // 3rd request within 7 days is blocked (max 2/week)
+    await expect(auth.forgotPassword('dev@pointfex.com')).rejects.toMatchObject({
+      status: 429,
+    })
+    await expect(auth.forgotPassword('dev@pointfex.com')).rejects.toBeInstanceOf(HttpException)
+
+    // Simulate 4 requests spread across earlier weeks in the last 30 days (+1 this week = 5 total)
+    auditTimestamps.length = 0
+    const now = Date.now()
+    auditTimestamps.push(
+      new Date(now - 25 * 24 * 60 * 60 * 1000),
+      new Date(now - 20 * 24 * 60 * 60 * 1000),
+      new Date(now - 14 * 24 * 60 * 60 * 1000),
+      new Date(now - 10 * 24 * 60 * 60 * 1000),
+      new Date(now - 1 * 24 * 60 * 60 * 1000),
+    )
+
+    // 6th request within 30 days is blocked (max 5/month) even though weekly count is only 1
+    await expect(auth.forgotPassword('dev@pointfex.com')).rejects.toMatchObject({
+      status: 429,
+    })
+  })
+
+  it('enforces single-device session (revokes prior sessions/tokens and increments authVersion on login)', async () => {
+    const { AuthService } = require('./auth.service')
+    const bcrypt = require('bcrypt')
+    const passwordHash = await bcrypt.hash('StrongPass123!', 4)
+
+    let authVersion = 1
+    const refreshUpdateMany = jest.fn(async () => ({ count: 1 }))
+    const sessionUpdateMany = jest.fn(async () => ({ count: 1 }))
+    const prisma: any = {
+      employee: {
+        findFirst: jest.fn(async () => ({
+          id: 'emp_dev_1',
+          email: 'dev@pointfex.com',
+          name: 'Dev User',
+          title: 'Developer',
+          initials: 'DU',
+          avatarUrl: null,
+          status: 'online',
+          isSuspended: false,
+          mustChangePassword: false,
+          mustEnrollMfa: false,
+          mfaEnabled: false,
+          passwordHash,
+          tempPasswordHash: null,
+          tempPasswordExpiresAt: null,
+          employeeRoles: [{ role: { id: 'r1', slug: 'developer', name: 'Developer', isSystemDefault: false } }],
+          positionAssignments: [],
+        })),
+        update: jest.fn(async ({ data }: any) => {
+          if (data?.authVersion?.increment) authVersion += data.authVersion.increment
+          return { authVersion }
+        }),
+      },
+      refreshToken: {
+        updateMany: refreshUpdateMany,
+        create: jest.fn(async () => ({})),
+      },
+      securitySession: {
+        updateMany: sessionUpdateMany,
+        create: jest.fn(async () => ({})),
+      },
+      $transaction: jest.fn(async (cb: any) => cb(prisma)),
+    }
+    const jwt: any = { signAsync: jest.fn(async (p: any) => JSON.stringify(p)) }
+    const auth = new AuthService(prisma, jwt)
+    const req: any = { headers: {} }
+    const res: any = { cookie: jest.fn(), clearCookie: jest.fn() }
+
+    await auth.login({ email: 'dev@pointfex.com', password: 'StrongPass123!' }, req, res)
+
+    expect(refreshUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { employeeId: 'emp_dev_1', revokedAt: null } }),
+    )
+    expect(sessionUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { employeeId: 'emp_dev_1', isRevoked: false } }),
+    )
+    expect(authVersion).toBe(2)
+    expect(jwt.signAsync).toHaveBeenCalledWith(expect.objectContaining({ authVersion: 2 }))
+  })
 })
 

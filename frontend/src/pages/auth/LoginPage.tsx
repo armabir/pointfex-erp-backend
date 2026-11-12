@@ -43,10 +43,41 @@ function mapFriendlyAuthError(rawMessage?: string, oauthErrorCode?: string | nul
   return rawMessage
 }
 
+const REMEMBERED_LOGIN_KEY = 'pointfex_remembered_login_id'
+const REMEMBERED_LOGIN_TTL_MS = 3 * 24 * 60 * 60 * 1000
+
+function readRememberedEmail(): string {
+  try {
+    const raw = localStorage.getItem(REMEMBERED_LOGIN_KEY)
+    if (!raw) return ''
+    const parsed = JSON.parse(raw) as { email?: string; expiresAt?: number }
+    if (parsed.email && typeof parsed.expiresAt === 'number' && parsed.expiresAt > Date.now()) {
+      return parsed.email
+    }
+    localStorage.removeItem(REMEMBERED_LOGIN_KEY)
+  } catch {
+    // ignore storage errors
+  }
+  return ''
+}
+
+function saveRememberedEmail(email: string): void {
+  try {
+    const clean = email.trim().toLowerCase()
+    if (!clean) return
+    localStorage.setItem(
+      REMEMBERED_LOGIN_KEY,
+      JSON.stringify({ email: clean, expiresAt: Date.now() + REMEMBERED_LOGIN_TTL_MS }),
+    )
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export function LoginPage() {
   const { loginWithCredentials, completeGoogleLogin } = useApp()
 
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(() => readRememberedEmail())
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [capsLockOn, setCapsLockOn] = useState(false)
@@ -123,6 +154,7 @@ export function LoginPage() {
     try {
       if (mfaChallenge.mode === 'password') {
         await loginWithCredentials(email.trim(), password, payload)
+        saveRememberedEmail(email.trim())
       } else {
         await completeGoogleLogin({
           pendingToken: mfaChallenge.pendingToken,
@@ -156,6 +188,8 @@ export function LoginPage() {
       const res = await loginWithCredentials(email.trim(), password)
       if (res.mfaRequired) {
         setMfaChallenge({ mode: 'password' })
+      } else {
+        saveRememberedEmail(email.trim())
       }
     } catch (err: unknown) {
       const status =

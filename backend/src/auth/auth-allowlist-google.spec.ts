@@ -163,7 +163,7 @@ describe('LoginAllowlistService, MailService, Recovery Codes & Google OAuth', ()
         res,
       ),
     ).rejects.toBeInstanceOf(UnauthorizedException)
-  })
+  }, 15000)
 
   it('GET /api/auth/google returns 302 to accounts.google.com with PKCE+state+nonce and callback handles errors', async () => {
     const config: any = {

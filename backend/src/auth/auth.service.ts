@@ -2,6 +2,8 @@ import {
   Injectable,
   ForbiddenException,
   UnauthorizedException,
+  HttpException,
+  HttpStatus,
   Optional,
   Inject,
 } from '@nestjs/common'
@@ -65,8 +67,8 @@ export class AuthService {
 
   private getRefreshTtlDays(): number {
     const raw = this.configService?.get<number | string>('JWT_REFRESH_EXPIRES_DAYS')
-    const parsed = Number(raw || 7)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 7
+    const parsed = Number(raw || 3)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 3
   }
 
   private resolveCookieSecure(request: Request): boolean {
@@ -141,15 +143,39 @@ export class AuthService {
     const ipAddress = extractClientIp(request)
     const userAgent = request.headers?.['user-agent']?.slice(0, 255) || null
 
-    await this.prisma.$transaction(async (tx) => {
+    const authVersion = await this.prisma.$transaction(async (tx) => {
+      const now = new Date()
+      let nextAuthVersion: number | undefined
+
       if (revokeTokenHash) {
         await tx.refreshToken.update({
           where: { tokenHash: revokeTokenHash },
           data: {
-            revokedAt: new Date(),
+            revokedAt: now,
             replacedByTokenHash: refreshTokenHash,
           },
         })
+        const currentEmp = await (tx as any).employee?.findUnique?.({
+          where: { id: employeeId },
+          select: { authVersion: true },
+        })
+        nextAuthVersion = currentEmp?.authVersion
+      } else {
+        // Single active device policy: revoke all prior sessions & refresh tokens on new login
+        await (tx as any).refreshToken?.updateMany?.({
+          where: { employeeId, revokedAt: null },
+          data: { revokedAt: now },
+        })
+        await (tx as any).securitySession?.updateMany?.({
+          where: { employeeId, isRevoked: false },
+          data: { isRevoked: true, revokedAt: now },
+        })
+        const updatedEmp = await (tx as any).employee?.update?.({
+          where: { id: employeeId },
+          data: { authVersion: { increment: 1 } },
+          select: { authVersion: true },
+        })
+        nextAuthVersion = updatedEmp?.authVersion
       }
 
       await tx.refreshToken.create({
@@ -179,9 +205,11 @@ export class AuthService {
       } else {
         await tx.securitySession.updateMany({
           where: { tokenFamilyId: familyId, isRevoked: false },
-          data: { lastActiveAt: new Date(), expiresAt: refreshExpiresAt },
+          data: { lastActiveAt: now, expiresAt: refreshExpiresAt },
         })
       }
+
+      return nextAuthVersion
     })
 
     const accessToken = await this.jwtService.signAsync({
@@ -189,6 +217,7 @@ export class AuthService {
       employeeId,
       email,
       role: primaryRole,
+      ...(authVersion !== undefined ? { authVersion } : {}),
     })
 
     response.cookie(ACCESS_TOKEN_COOKIE, accessToken, this.buildAccessCookieOptions(request))
@@ -648,12 +677,18 @@ export class AuthService {
     const employee = email
       ? await this.prisma.employee.findUnique({
           where: { email },
-          select: { id: true, name: true, email: true, isSuspended: true },
+          select: { id: true, name: true, email: true, isSuspended: true, mfaEnabled: true },
         })
       : null
 
     if (!employee || employee.isSuspended) {
       return { sent: true }
+    }
+
+    if (!employee.mfaEnabled) {
+      throw new ForbiddenException(
+        'Your MFA is disabled. Please turn on MFA or contact CHRO or CEO to reset your password.',
+      )
     }
 
     if (this.allowlistService) {
@@ -673,6 +708,43 @@ export class AuthService {
       }
     }
 
+    if ((this.prisma as any).auditLog?.count) {
+      const nowMs = Date.now()
+      const sevenDaysAgo = new Date(nowMs - 7 * 24 * 60 * 60 * 1000)
+      const thirtyDaysAgo = new Date(nowMs - 30 * 24 * 60 * 60 * 1000)
+
+      const [weeklyCount, monthlyCount] = await Promise.all([
+        this.prisma.auditLog.count({
+          where: {
+            actionCode: 'AUTH_FORGOT_PASSWORD_REQUESTED',
+            entityId: employee.id,
+            timestamp: { gte: sevenDaysAgo },
+          },
+        }),
+        this.prisma.auditLog.count({
+          where: {
+            actionCode: 'AUTH_FORGOT_PASSWORD_REQUESTED',
+            entityId: employee.id,
+            timestamp: { gte: thirtyDaysAgo },
+          },
+        }),
+      ])
+
+      if (weeklyCount >= 2) {
+        throw new HttpException(
+          'Password reset limit reached: maximum 2 requests per week. Please try again later or contact your administrator.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        )
+      }
+
+      if (monthlyCount >= 5) {
+        throw new HttpException(
+          'Password reset limit reached: maximum 5 requests per month. Please try again later or contact your administrator.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        )
+      }
+    }
+
     const token = this.jwtService.sign(
       { sub: employee.id, purpose: 'password_reset' },
       { expiresIn: '15m' },
@@ -683,6 +755,22 @@ export class AuthService {
       resetToken: token,
       ttlMinutes: 15,
     })
+
+    await this.auditLogger?.log({
+      actorId: employee.id,
+      actorName: employee.name,
+      actorEmail: employee.email,
+      actorRole: 'USER',
+      action: 'Requested password reset email',
+      actionCode: 'AUTH_FORGOT_PASSWORD_REQUESTED',
+      severity: 'INFO',
+      entityType: 'Employee',
+      entityId: employee.id,
+      entityTitle: employee.name,
+      description: `Issued password reset link for ${employee.email}`,
+      category: 'security',
+    })
+
     const isProd = this.configService?.get<string>('NODE_ENV') === 'production'
     return {
       sent: true,
