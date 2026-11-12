@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -41,3 +42,17 @@ jobs:
       - run: npm ci
       - run: npm run verify
 
+  deploy:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm install --global vercel@65.14.0
+      - name: Deploy Frontend to Vercel
+        run: |
+          vercel deploy --prod --token="${{ secrets.VERCEL_TOKEN }}" ./frontend --yes
+      - name: Deploy Backend to Vercel
+        run: |
+          vercel deploy --prod --token="${{ secrets.VERCEL_TOKEN }}" ./backend --yes
