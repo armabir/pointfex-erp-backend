@@ -1,10 +1,13 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build",
-  "installCommand": "npm ci",
-  "outputDirectory": "dist",
-  "framework": "vite",
   "rewrites": [
-    { "source": "/((?!assets/|sw\\.js|manifest\\.webmanifest|Logo\\.png).*)", "destination": "/index.html" }
+    {
+      "source": "/api/:path*",
+      "destination": "https://pointfex-backend.vercel.app/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ]
 }
+

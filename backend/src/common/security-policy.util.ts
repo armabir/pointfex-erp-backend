@@ -139,7 +139,7 @@ export function generateTotpCode(secretHex: string, windowOffset = 0): string {
 export function verifyTotpCode(secretHex: string, submittedCode: string): boolean {
   const normalized = submittedCode.trim()
   if (!/^\d{6}$/.test(normalized)) return false
-  for (const offset of [-1, 0, 1]) {
+  for (const offset of [-2, -1, 0, 1, 2]) {
     if (generateTotpCode(secretHex, offset) === normalized) {
       return true
     }

@@ -41,7 +41,7 @@ export class FreshMfaService {
       return { valid: false, matchedStep: null }
     }
     const baseStep = Math.floor(Date.now() / 1000 / 30)
-    for (const offset of [-1, 0, 1]) {
+    for (const offset of [-2, -1, 0, 1, 2]) {
       if (generateTotpCode(secretHex, offset) === normalized) {
         return { valid: true, matchedStep: baseStep + offset }
       }

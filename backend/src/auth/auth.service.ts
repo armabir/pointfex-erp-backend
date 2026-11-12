@@ -81,42 +81,47 @@ export class AuthService {
     )
   }
 
-  private resolveCookieSameSite(): CookieOptions['sameSite'] {
-    return this.configService?.get<'strict' | 'lax' | 'none'>('COOKIE_SAME_SITE') || 'strict'
+  private resolveCookieSameSite(): 'strict' | 'lax' | 'none' {
+    const raw = this.configService?.get<string>('COOKIE_SAMESITE')?.trim().toLowerCase()
+    if (raw === 'strict' || raw === 'lax' || raw === 'none') return raw
+    return 'lax'
   }
 
   private buildAccessCookieOptions(request: Request): CookieOptions {
+    const sameSite = this.resolveCookieSameSite()
     return {
       httpOnly: true,
-      secure: this.resolveCookieSecure(request),
-      sameSite: this.resolveCookieSameSite(),
+      secure: sameSite === 'none' ? true : this.resolveCookieSecure(request),
+      sameSite,
       path: '/api',
       maxAge: ACCESS_COOKIE_MAX_AGE_MS,
     }
   }
 
   private buildRefreshCookieOptions(request: Request): CookieOptions {
+    const sameSite = this.resolveCookieSameSite()
     return {
       httpOnly: true,
-      secure: this.resolveCookieSecure(request),
-      sameSite: this.resolveCookieSameSite(),
+      secure: sameSite === 'none' ? true : this.resolveCookieSecure(request),
+      sameSite,
       path: '/api/auth',
       maxAge: this.getRefreshTtlDays() * 24 * 60 * 60 * 1000,
     }
   }
 
   private clearAuthCookies(request: Request, response: Response): void {
-    const secure = this.resolveCookieSecure(request)
+    const sameSite = this.resolveCookieSameSite()
+    const secure = sameSite === 'none' ? true : this.resolveCookieSecure(request)
     response.clearCookie(ACCESS_TOKEN_COOKIE, {
       httpOnly: true,
       secure,
-      sameSite: this.resolveCookieSameSite(),
+      sameSite,
       path: '/api',
     })
     response.clearCookie(REFRESH_TOKEN_COOKIE, {
       httpOnly: true,
       secure,
-      sameSite: this.resolveCookieSameSite(),
+      sameSite,
       path: '/api/auth',
     })
   }

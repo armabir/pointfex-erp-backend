@@ -125,98 +125,100 @@ export class EmployeesService {
     const employeeId = `emp_${normalizedSlug.replace(/[^a-z0-9]/g, '')}_${crypto.randomUUID().slice(0, 8)}`
     const initials = buildInitials(dto.name)
 
-    const createdEmployee = await this.prisma.$transaction(async (tx) => {
-      const employee = await tx.employee.create({
-        data: {
-          id: employeeId,
-          name: dto.name.trim(),
-          email,
-          passwordHash,
-          mustChangePassword: true,
-          inviteTokenHash,
-          inviteTokenExpiresAt,
-          inviteTokenUsedAt: null,
-          title: dto.title.trim(),
-          initials,
-          status: 'online',
-          isSuspended: false,
-          timezone: dto.timezone?.trim() || 'UTC+6 (BST)',
-          skills: dto.skills && dto.skills.length > 0 ? dto.skills : [],
-          bio: dto.bio?.trim() || `${dto.title.trim()} at Pointfex ERP.`,
-        },
-      })
-
-      await tx.employeeRole.create({
-        data: {
-          employeeId: employee.id,
-          roleId: role.id,
-          assignedById: actor.id,
-          isActive: true,
-        },
-      })
-
-      await tx.employeeWallet.create({
-        data: {
-          employeeId: employee.id,
-        },
-      })
-
-      if (dto.teamId) {
-        await tx.teamMembership.create({
+    const createdId = await this.prisma.$transaction(
+      async (tx) => {
+        const employee = await tx.employee.create({
           data: {
-            teamId: dto.teamId,
+            id: employeeId,
+            name: dto.name.trim(),
+            email,
+            passwordHash,
+            mustChangePassword: true,
+            inviteTokenHash,
+            inviteTokenExpiresAt,
+            inviteTokenUsedAt: null,
+            title: dto.title.trim(),
+            initials,
+            status: 'online',
+            isSuspended: false,
+            timezone: dto.timezone?.trim() || 'UTC+6 (BST)',
+            skills: dto.skills && dto.skills.length > 0 ? dto.skills : [],
+            bio: dto.bio?.trim() || `${dto.title.trim()} at Pointfex ERP.`,
+          },
+        })
+
+        await tx.employeeRole.create({
+          data: {
             employeeId: employee.id,
-            isLead: false,
-            roleInTeam: normalizedSlug === 'pm' ? 'pm' : 'developer',
+            roleId: role.id,
+            assignedById: actor.id,
             isActive: true,
           },
         })
-      }
 
-      await this.auditLogger?.log(
-        {
-          actorId: actor.id,
-          actorName: actorContext.name,
-          actorEmail: actorContext.email,
-          actorRole: actor.role,
-          action: `Provisioned employee account ${employee.name}`,
-          actionCode: 'EMPLOYEE_PROVISIONED',
-          severity: 'INFO',
-          entityType: 'Employee',
-          entityId: employee.id,
-          entityTitle: employee.name,
-          description: `Onboarded ${employee.name} (${employee.email}) with role "${role.name}" (${role.slug})${dto.teamId ? ` in squad ${dto.teamId}` : ''}.`,
-          category: 'people',
-        },
-        tx,
-      )
+        await tx.employeeWallet.create({
+          data: {
+            employeeId: employee.id,
+          },
+        })
 
-      return tx.employee.findUnique({
-        where: { id: employee.id },
-        include: {
-          positionAssignments: {
-            where: { isActive: true },
-            include: { position: true },
-          },
-          employeeRoles: {
-            where: { isActive: true },
-            include: { role: true },
-          },
-          targetedAccessChanges: {
-            where: { status: 'PENDING' },
-            include: {
-              requestedRole: true,
-              requester: { select: { id: true, name: true, title: true } },
+        if (dto.teamId) {
+          await tx.teamMembership.create({
+            data: {
+              teamId: dto.teamId,
+              employeeId: employee.id,
+              isLead: false,
+              roleInTeam: normalizedSlug === 'pm' ? 'pm' : 'developer',
+              isActive: true,
             },
-            orderBy: { createdAt: 'desc' },
-          },
-          teamMemberships: {
-            where: { isActive: true },
-            include: { team: true },
-          },
-          wallet: true,
+          })
+        }
+
+        return employee.id
+      },
+      { maxWait: 10000, timeout: 15000 },
+    )
+
+    await this.auditLogger?.log({
+      actorId: actor.id,
+      actorName: actorContext.name,
+      actorEmail: actorContext.email,
+      actorRole: actor.role,
+      action: `Provisioned employee account ${dto.name.trim()}`,
+      actionCode: 'EMPLOYEE_PROVISIONED',
+      severity: 'INFO',
+      entityType: 'Employee',
+      entityId: createdId,
+      entityTitle: dto.name.trim(),
+      description: `Onboarded ${dto.name.trim()} (${email}) with role "${role.name}" (${role.slug})${dto.teamId ? ` in squad ${dto.teamId}` : ''}.`,
+      category: 'people',
+    })
+
+    const createdEmployee = await this.prisma.employee.findUnique({
+      where: { id: createdId },
+      include: {
+        positionAssignments: {
+          where: { isActive: true },
+          include: { position: true },
         },
-      })
+        employeeRoles: {
+          where: { isActive: true },
+          include: { role: true },
+        },
+        targetedAccessChanges: {
+          where: { status: 'PENDING' },
+          include: {
+            requestedRole: true,
+            requester: { select: { id: true, name: true, title: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+        teamMemberships: {
+          where: { isActive: true },
+          include: { team: true },
+        },
+        wallet: true,
+      },
     })
 
     if (!createdEmployee) {
