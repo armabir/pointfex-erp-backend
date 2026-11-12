@@ -164,13 +164,17 @@ export const erpApi = {
       method: 'POST',
     }),
   getAuthMe: () => apiRequest<AuthSessionUser>('/auth/me'),
-  changePassword: (currentPassword: string, newPassword: string, mfaCode?: string) =>
+  changePassword: (currentPassword?: string, newPassword?: string, mfaCode?: string) =>
     apiRequest<{ changed: boolean; mustChangePassword: boolean; mustEnrollMfa: boolean }>(
       '/auth/change-password',
       {
         method: 'POST',
         headers: mfaCode ? { 'X-MFA-Code': mfaCode } : undefined,
-        body: JSON.stringify({ currentPassword, newPassword, ...(mfaCode ? { mfaCode } : {}) }),
+        body: JSON.stringify({
+          ...(currentPassword ? { currentPassword } : {}),
+          newPassword,
+          ...(mfaCode ? { mfaCode } : {}),
+        }),
       },
     ),
   enrollMfa: () =>

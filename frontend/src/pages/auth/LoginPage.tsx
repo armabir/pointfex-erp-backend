@@ -101,8 +101,8 @@ export function LoginPage() {
   const [recoveryCodeInput, setRecoveryCodeInput] = useState('')
   const mfaInputRef = useRef<HTMLInputElement | null>(null)
 
-  // Forgot / Reset password views
-  const [authView, setAuthView] = useState<'login' | 'forgot' | 'reset'>(() => {
+  // Reset password views
+  const [authView, setAuthView] = useState<'login' | 'reset'>(() => {
     const params = new URLSearchParams(window.location.search)
     return params.get('token') &&
       (window.location.pathname.includes('reset-password') || params.get('onboarding') === '1')
@@ -112,11 +112,21 @@ export function LoginPage() {
   const [isOnboardingLink] = useState(
     () => new URLSearchParams(window.location.search).get('onboarding') === '1',
   )
-  const [resetToken, setResetToken] = useState(
+  const [resetToken] = useState(
     () => new URLSearchParams(window.location.search).get('token') || '',
   )
   const [newResetPassword, setNewResetPassword] = useState('')
+  const [confirmResetPassword, setConfirmResetPassword] = useState('')
   const [resetMfaCode, setResetMfaCode] = useState('')
+
+  useEffect(() => {
+    if (
+      window.location.pathname !== '/login' &&
+      !window.location.pathname.startsWith('/reset-password')
+    ) {
+      window.history.replaceState(null, '', '/login' + window.location.search)
+    }
+  }, [])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -124,11 +134,11 @@ export function LoginPage() {
     const oauthError = params.get('oauthError')
     const oauthCode = params.get('oauthCode')
     if (oauthErrorCode || oauthError) {
-      window.history.replaceState(null, '', window.location.pathname)
+      window.history.replaceState(null, '', '/login')
       return
     }
     if (oauthCode) {
-      window.history.replaceState(null, '', window.location.pathname)
+      window.history.replaceState(null, '', '/login')
       void completeGoogleLogin({ code: oauthCode })
         .then((res) => {
           if (res.mfaRequired) {
@@ -218,27 +228,16 @@ export function LoginPage() {
     window.location.assign('/api/auth/google')
   }
 
-  const handleForgotSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErrorMsg(null)
-    setInfoMsg(null)
-    setIsSubmitting(true)
-    try {
-      await erpApi.forgotPassword(email.trim())
-      setInfoMsg('If an active account exists for that email, a reset link has been sent.')
-    } catch (err: unknown) {
-      setErrorMsg(mapFriendlyAuthError(err instanceof Error ? err.message : undefined))
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
   const handleResetSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMsg(null)
     setInfoMsg(null)
     if (newResetPassword.length < 12) {
       setErrorMsg('New password must be at least 12 characters.')
+      return
+    }
+    if (newResetPassword !== confirmResetPassword) {
+      setErrorMsg('Passwords do not match.')
       return
     }
     setIsSubmitting(true)
@@ -248,9 +247,10 @@ export function LoginPage() {
         newPassword: newResetPassword,
         ...(resetMfaCode.trim() ? { mfaCode: resetMfaCode.trim() } : {}),
       })
-      setInfoMsg('Password reset complete. You can now sign in with your new password.')
+      setInfoMsg('Password saved successfully! You can now sign in with your new password or Google.')
       setAuthView('login')
       setNewResetPassword('')
+      setConfirmResetPassword('')
       setResetMfaCode('')
       window.history.replaceState(null, '', '/login')
     } catch (err: unknown) {
@@ -262,25 +262,21 @@ export function LoginPage() {
 
   const shellTitle = mfaChallenge
     ? 'Two-factor verification'
-    : authView === 'forgot'
-      ? 'Reset your password'
-      : authView === 'reset'
-        ? isOnboardingLink
-          ? 'Activate your account'
-          : 'Choose a new password'
-        : 'Sign in to Pointfex ERP'
+    : authView === 'reset'
+      ? isOnboardingLink
+        ? 'Activate your account'
+        : 'Choose a new password'
+      : 'Sign in to Pointfex ERP'
 
   const shellSubtitle = mfaChallenge
     ? useRecoveryCode
       ? 'Enter one of your single-use recovery codes.'
       : 'Enter the 6-digit code from your authenticator app.'
-    : authView === 'forgot'
-      ? 'We will email you a 15-minute password reset link.'
-      : authView === 'reset'
-        ? isOnboardingLink
-          ? 'Set your password using this 24-hour one-time setup link.'
-          : 'Set a new password of at least 12 characters.'
-        : 'Use your Google workspace account or email and password.'
+    : authView === 'reset'
+      ? isOnboardingLink
+        ? 'Set your password using this 24-hour one-time setup link.'
+        : 'Set a new password of at least 12 characters.'
+      : 'Use your Google workspace account or email and password.'
 
   return (
     <AuthShell title={shellTitle} subtitle={shellSubtitle}>
@@ -376,57 +372,8 @@ export function LoginPage() {
             </button>
           </div>
         </form>
-      ) : authView === 'forgot' ? (
-        <form onSubmit={handleForgotSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="forgot-email" className="block text-xs font-medium text-[var(--text)] mb-1.5">
-              Email address
-            </label>
-            <input
-              id="forgot-email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@company.com"
-              className="w-full px-3.5 py-2.5 text-sm bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full min-h-[44px] py-2.5 px-4 rounded-lg bg-[var(--primary)] hover:opacity-95 disabled:opacity-60 text-white text-sm font-medium cursor-pointer"
-          >
-            {isSubmitting ? 'Sending...' : 'Send reset link'}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setAuthView('login')
-              setErrorMsg(null)
-              setInfoMsg(null)
-            }}
-            className="w-full text-xs text-[var(--muted)] hover:text-[var(--text)] inline-flex items-center justify-center gap-1 cursor-pointer"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Back to sign in
-          </button>
-        </form>
       ) : authView === 'reset' ? (
         <form onSubmit={handleResetSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="reset-token" className="block text-xs font-medium text-[var(--text)] mb-1.5">
-              Reset token
-            </label>
-            <input
-              id="reset-token"
-              type="text"
-              required
-              value={resetToken}
-              onChange={(e) => setResetToken(e.target.value)}
-              className="w-full px-3.5 py-2 text-xs font-mono bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-            />
-          </div>
           <div>
             <label htmlFor="reset-password" className="block text-xs font-medium text-[var(--text)] mb-1.5">
               New password (min 12 characters)
@@ -438,34 +385,55 @@ export function LoginPage() {
               minLength={12}
               value={newResetPassword}
               onChange={(e) => setNewResetPassword(e.target.value)}
+              placeholder="Enter new strong password"
               className="w-full px-3.5 py-2.5 text-sm bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
             />
           </div>
           <div>
-            <label htmlFor="reset-mfa" className="block text-xs font-medium text-[var(--text)] mb-1.5">
-              Authenticator code (if MFA is enabled)
+            <label htmlFor="confirm-reset-password" className="block text-xs font-medium text-[var(--text)] mb-1.5">
+              Confirm new password
             </label>
             <input
-              id="reset-mfa"
-              type="text"
-              inputMode="numeric"
-              maxLength={6}
-              value={resetMfaCode}
-              onChange={(e) => setResetMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="000000"
-              className="w-full px-3.5 py-2 text-sm font-mono bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+              id="confirm-reset-password"
+              type="password"
+              required
+              minLength={12}
+              value={confirmResetPassword}
+              onChange={(e) => setConfirmResetPassword(e.target.value)}
+              placeholder="Re-enter new password"
+              className="w-full px-3.5 py-2.5 text-sm bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
             />
           </div>
+          {!isOnboardingLink && (
+            <div>
+              <label htmlFor="reset-mfa" className="block text-xs font-medium text-[var(--text)] mb-1.5">
+                Authenticator code (if MFA is enabled on your account)
+              </label>
+              <input
+                id="reset-mfa"
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={resetMfaCode}
+                onChange={(e) => setResetMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="000000"
+                className="w-full px-3.5 py-2 text-sm font-mono bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+              />
+            </div>
+          )}
           <button
             type="submit"
             disabled={isSubmitting}
             className="w-full min-h-[44px] py-2.5 px-4 rounded-lg bg-[var(--primary)] hover:opacity-95 disabled:opacity-60 text-white text-sm font-medium cursor-pointer"
           >
-            {isSubmitting ? 'Updating...' : 'Reset password'}
+            {isSubmitting ? 'Saving Password...' : isOnboardingLink ? 'Activate Account & Set Password' : 'Save New Password'}
           </button>
           <button
             type="button"
-            onClick={() => setAuthView('login')}
+            onClick={() => {
+              setAuthView('login')
+              window.history.replaceState(null, '', '/login')
+            }}
             className="w-full text-xs text-[var(--muted)] hover:text-[var(--text)] inline-flex items-center justify-center gap-1 cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
@@ -538,17 +506,6 @@ export function LoginPage() {
                 <label htmlFor="login-password" className="block text-xs font-medium text-[var(--text)]">
                   Password
                 </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthView('forgot')
-                    setErrorMsg(null)
-                    setInfoMsg(null)
-                  }}
-                  className="text-xs text-[var(--primary)] hover:underline cursor-pointer"
-                >
-                  Forgot password?
-                </button>
               </div>
               <div className="relative">
                 <Lock className="w-4 h-4 text-[var(--muted)] absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -604,6 +561,10 @@ export function LoginPage() {
                 <span>Sign in</span>
               )}
             </button>
+
+            <p className="text-[11px] text-[var(--muted)] text-center pt-2 leading-relaxed">
+              Forgot your password? Please contact the CHRO or an administrator to reset your credentials.
+            </p>
           </form>
         </div>
       )}

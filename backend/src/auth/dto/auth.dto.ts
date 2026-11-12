@@ -18,9 +18,9 @@ export class LoginDto {
 }
 
 export class ChangePasswordDto {
+  @IsOptional()
   @IsString()
-  @MinLength(1)
-  currentPassword!: string
+  currentPassword?: string
 
   @IsString()
   @MinLength(12)

@@ -286,21 +286,15 @@ export class AuthService {
       }
     }
 
-    if (employee.mfaEnabled) {
-      const mfaResult = await this.verifyLoginMfaOrRecovery(
+    // Standard login does not require MFA OTP; MFA is strictly enforced for sensitive/critical operations
+    if (employee.mfaEnabled && (dto.mfaCode || dto.recoveryCode)) {
+      await this.verifyLoginMfaOrRecovery(
         employee.id,
         employee.mfaSecret,
         employee.mfaRecoveryCodes,
         dto.mfaCode,
         dto.recoveryCode,
       )
-      if (mfaResult === 'REQUIRED') {
-        return {
-          authenticated: false,
-          mfaRequired: true,
-          methods: ['totp', 'recovery'],
-        }
-      }
     }
 
     const accessProfile = this.rbacService
@@ -514,6 +508,7 @@ export class AuthService {
         passwordHash: true,
         isSuspended: true,
         mfaEnabled: true,
+        mustChangePassword: true,
       },
     })
 
@@ -521,16 +516,25 @@ export class AuthService {
       throw new ForbiddenException('Account unavailable.')
     }
 
-    if (!employee.passwordHash) {
+    if (!employee.passwordHash && !employee.mustChangePassword) {
       throw new ForbiddenException('Account password is not initialized.')
     }
 
-    const matches = await bcrypt.compare(dto.currentPassword, employee.passwordHash)
-    if (!matches) {
-      throw new UnauthorizedException('Current password is incorrect.')
+    // For regular password changes (after onboarding), verify current password.
+    // For first-time onboarding (mustChangePassword === true), currentPassword is optional if not known.
+    if (dto.currentPassword && employee.passwordHash) {
+      const matches = await bcrypt.compare(dto.currentPassword, employee.passwordHash)
+      if (!matches && !employee.mustChangePassword) {
+        throw new UnauthorizedException('Current password is incorrect.')
+      }
+    } else if (!employee.mustChangePassword) {
+      if (!dto.currentPassword) {
+        throw new UnauthorizedException('Current password is required.')
+      }
     }
 
-    if (employee.mfaEnabled && this.freshMfa) {
+    // Only require fresh MFA for sensitive password changes when MFA is enabled AND not during first-time onboarding
+    if (employee.mfaEnabled && !employee.mustChangePassword && this.freshMfa) {
       await this.freshMfa.verifyFreshMfa({
         actorId: employee.id,
         actionKey: 'account:change_password',
@@ -539,7 +543,7 @@ export class AuthService {
       })
     }
 
-    if (dto.currentPassword === dto.newPassword) {
+    if (dto.currentPassword && dto.currentPassword === dto.newPassword) {
       throw new ForbiddenException('New password must differ from current temporary password.')
     }
 

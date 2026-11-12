@@ -137,16 +137,16 @@ describe('LoginAllowlistService, MailService, Recovery Codes & Google OAuth', ()
       auth.login({ email: 'dev@pointfex.com', password: 'StrongPass123!' }, req, res),
     ).rejects.toBeInstanceOf(UnauthorizedException)
 
-    // 2. Valid temp password + MFA enabled without code prompts MFA challenge
+    // 2. Valid credentials authenticate directly (MFA OTP not required on standard login)
     tempExpiresAt = new Date(Date.now() + 60_000)
-    const challenge = await auth.login(
+    const directLogin = await auth.login(
       { email: 'dev@pointfex.com', password: 'StrongPass123!' },
       req,
       res,
     )
-    expect(challenge).toMatchObject({ authenticated: false, mfaRequired: true })
+    expect(directLogin).toMatchObject({ authenticated: true })
 
-    // 3. Valid recovery code signs in and consumes code
+    // 3. Supplying recovery code verifies and consumes code
     const ok = await auth.login(
       { email: 'dev@pointfex.com', password: 'StrongPass123!', recoveryCode: recoveryPlain },
       req,

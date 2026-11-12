@@ -172,17 +172,17 @@ export class MailService {
         '',
         'Your Pointfex ERP account has been provisioned.',
         `Login ID: ${params.to}`,
-        `Set your password using this one-time link (valid for ${ttl} hours):`,
+        `You can sign in directly with Google or use this one-time link (valid for ${ttl} hours) to set your password:`,
         setupUrl,
         '',
-        'This link can only be used once. You can also sign in with Google if enabled for your email.',
+        'This link can only be used once. After activation, you can sign in anytime with Google or your password without extra login codes.',
       ].join('\n'),
       html: `
         <div style="font-family:Inter,system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#111827;">
           <h2 style="margin:0 0 12px;">Welcome to Pointfex ERP</h2>
           <p>Hello ${this.escapeHtml(params.name)},</p>
           <p>Your Pointfex ERP account has been provisioned. Your login ID is <strong>${this.escapeHtml(params.to)}</strong>.</p>
-          <p>Click the button below to set your password and activate your account. This link is valid for <strong>${ttl} hours</strong> and can be used <strong>once</strong>:</p>
+          <p>You can sign in directly with Google, or click the button below to set your password and activate your account. This link is valid for <strong>${ttl} hours</strong> and can be used <strong>once</strong>:</p>
           <p><a href="${this.escapeHtml(setupUrl)}" style="display:inline-block;background:#4F46E5;color:#FFFFFF;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;">Set Password &amp; Activate Account</a></p>
           <p style="font-size:12px;color:#6B7280;">If the button does not work, copy this link: ${this.escapeHtml(setupUrl)}</p>
         </div>

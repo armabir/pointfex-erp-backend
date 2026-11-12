@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { AppProvider, useApp } from './context/AppContext'
 import { Shell } from './components/layout/Shell'
 import { LoginPage } from './pages/auth/LoginPage'
@@ -354,6 +354,17 @@ function MainContentRouter() {
 
 function AppRoot() {
   const { isAuthenticated, isAuthChecking, mustChangePassword, mustEnrollMfa } = useApp()
+
+  useEffect(() => {
+    if (!isAuthChecking && !isAuthenticated) {
+      if (
+        window.location.pathname !== '/login' &&
+        !window.location.pathname.startsWith('/reset-password')
+      ) {
+        window.history.replaceState(null, '', '/login' + window.location.search)
+      }
+    }
+  }, [isAuthChecking, isAuthenticated])
 
   if (isAuthChecking) {
     return (
