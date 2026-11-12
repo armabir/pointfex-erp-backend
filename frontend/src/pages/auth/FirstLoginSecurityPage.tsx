@@ -16,13 +16,11 @@ export function FirstLoginSecurityPage() {
   const {
     currentUser,
     mustChangePassword,
-    mustEnrollMfa,
     completeFirstLoginSetup,
     logout,
     showToast,
   } = useApp()
 
-  const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordDone, setPasswordDone] = useState(!mustChangePassword)
@@ -52,19 +50,16 @@ export function FirstLoginSecurityPage() {
     }
     setIsSubmitting(true)
     try {
-      await erpApi.changePassword(currentPassword, newPassword)
+      await erpApi.changePassword(undefined, newPassword)
       setPasswordDone(true)
-      setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
       showToast(
-        mustEnrollMfa
-          ? 'Password updated. Complete mandatory MFA enrollment to continue.'
-          : 'Password updated! You can set up optional MFA below or skip for now.',
+        'Password set successfully! You can configure optional MFA below or continue to your workspace.',
         'success',
       )
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Unable to change password.')
+      setErrorMsg(err?.message || 'Unable to set password.')
     } finally {
       setIsSubmitting(false)
     }
@@ -154,35 +149,39 @@ export function FirstLoginSecurityPage() {
 
           {!passwordDone && (
             <form onSubmit={handlePasswordChange} className="space-y-3 text-xs">
-              <input
-                type="password"
-                required
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                placeholder="Current temporary password"
-                className="w-full px-3 py-2 rounded-lg bg-[var(--surface)] border border-[var(--border)] text-[var(--text)]"
-              />
-              <input
-                type="password"
-                required
-                minLength={12}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="New strong password (min 12 characters)"
-                className="w-full px-3 py-2 rounded-lg bg-[var(--surface)] border border-[var(--border)] text-[var(--text)]"
-              />
-              <input
-                type="password"
-                required
-                minLength={12}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirm new password"
-                className="w-full px-3 py-2 rounded-lg bg-[var(--surface)] border border-[var(--border)] text-[var(--text)]"
-              />
-              <Button type="submit" size="sm" variant="primary" disabled={isSubmitting}>
-                Update Password
-              </Button>
+              <div>
+                <label className="block text-[11px] font-medium text-[var(--muted)] mb-1">
+                  New Password (min 12 characters)
+                </label>
+                <input
+                  type="password"
+                  required
+                  minLength={12}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter a new strong password"
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-[var(--muted)] mb-1">
+                  Confirm New Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  minLength={12}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Re-enter your new password"
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                />
+              </div>
+              <div className="pt-1">
+                <Button type="submit" size="sm" variant="primary" disabled={isSubmitting}>
+                  {isSubmitting ? 'Saving Password...' : 'Save & Set Password'}
+                </Button>
+              </div>
             </form>
           )}
         </div>
@@ -192,7 +191,7 @@ export function FirstLoginSecurityPage() {
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[var(--text)] flex items-center gap-2">
               <KeyRound className="w-4 h-4 text-amber-500" />
-              Step 2: Authenticator App (TOTP MFA){!mustEnrollMfa ? ' — Optional' : ' — Required'}
+              Step 2: Authenticator App (TOTP MFA) — Optional
             </span>
             {mfaDone && (
               <span className="text-[11px] text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1 font-medium">
@@ -214,17 +213,15 @@ export function FirstLoginSecurityPage() {
                   >
                     Set Up Authenticator MFA
                   </Button>
-                  {!mustEnrollMfa && passwordDone && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      disabled={isSubmitting}
-                      onClick={() => void completeFirstLoginSetup()}
-                    >
-                      Skip MFA for now
-                    </Button>
-                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    disabled={isSubmitting}
+                    onClick={() => void completeFirstLoginSetup()}
+                  >
+                    Continue to Workspace
+                  </Button>
                 </div>
               ) : (
                 <form onSubmit={handleVerifyMfa} className="space-y-3">

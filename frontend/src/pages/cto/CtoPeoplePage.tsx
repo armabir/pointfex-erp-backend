@@ -1893,7 +1893,7 @@ export function CtoPeoplePage() {
             }
           }}
           title="Confirm Employee Onboarding"
-          actionSummary={`Create employee account for ${pendingCreatePayload.name} (${pendingCreatePayload.email}) with role "${pendingCreatePayload.roleSlug}" and send temporary sign-in credentials by email.`}
+          actionSummary={`Create employee account for ${pendingCreatePayload.name} (${pendingCreatePayload.email}) with role "${pendingCreatePayload.roleSlug}" and email a 24-hour one-time activation link to set their password.`}
           whoAffected={`${pendingCreatePayload.name} (${pendingCreatePayload.email})`}
           requiresReason
           isCritical
