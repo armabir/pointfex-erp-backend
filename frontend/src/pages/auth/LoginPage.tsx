@@ -104,10 +104,7 @@ export function LoginPage() {
   // Reset password views
   const [authView, setAuthView] = useState<'login' | 'reset'>(() => {
     const params = new URLSearchParams(window.location.search)
-    return params.get('token') &&
-      (window.location.pathname.includes('reset-password') || params.get('onboarding') === '1')
-      ? 'reset'
-      : 'login'
+    return params.get('token') ? 'reset' : 'login'
   })
   const [isOnboardingLink] = useState(
     () => new URLSearchParams(window.location.search).get('onboarding') === '1',
@@ -570,7 +567,7 @@ export function LoginPage() {
       )}
       <div className="mt-6 pt-4 border-t border-[var(--border)] flex items-center justify-between text-[11px] text-[var(--muted)]">
         <span>Pointfex ERP</span>
-        <span className="font-mono">v3.0.0 beta</span>
+        <span className="font-mono">v3.3.0 beta</span>
       </div>
     </AuthShell>
   )

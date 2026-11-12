@@ -71,7 +71,10 @@ export async function apiRequest<T>(
   const isAuthLifecycleRoute =
     path.startsWith('/auth/login') ||
     path.startsWith('/auth/refresh') ||
-    path.startsWith('/auth/logout')
+    path.startsWith('/auth/logout') ||
+    path.startsWith('/auth/reset-password') ||
+    path.startsWith('/auth/forgot-password') ||
+    path.startsWith('/auth/google')
 
   if (res.status === 401 && !isAuthLifecycleRoute && !_retried) {
     const refreshed = await attemptSessionRefresh()

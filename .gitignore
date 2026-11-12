@@ -49,3 +49,7 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Local agent artifacts
+.agents/
+skills-lock.json

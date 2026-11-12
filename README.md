@@ -1,4 +1,4 @@
-# Pointfex ERP (`v3.0.0-beta`)
+# Pointfex ERP (`v3.3.0-beta`)
 
 Zero-Trust enterprise resource planning platform built with **NestJS + Prisma + PostgreSQL (Neon)** and **React 19 + TypeScript + Vite + Tailwind CSS**.
 
@@ -26,7 +26,7 @@ PostgreSQL / Neon (least-privilege `pointfex_app` role at runtime)
 
 ---
 
-## Key Capabilities (`v3.0.0-beta`)
+## Key Capabilities (`v3.3.0-beta`)
 
 - **Zero-Trust Authentication & Onboarding**
   - Email/password login + Google OAuth 2.0 (PKCE) gated by the **CEO-only Login Allowlist** (`login_allowlist`).
