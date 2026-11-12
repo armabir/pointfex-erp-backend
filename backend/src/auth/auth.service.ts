@@ -81,11 +81,15 @@ export class AuthService {
     )
   }
 
+  private resolveCookieSameSite(): CookieOptions['sameSite'] {
+    return this.configService?.get<'strict' | 'lax' | 'none'>('COOKIE_SAME_SITE') || 'strict'
+  }
+
   private buildAccessCookieOptions(request: Request): CookieOptions {
     return {
       httpOnly: true,
       secure: this.resolveCookieSecure(request),
-      sameSite: 'strict',
+      sameSite: this.resolveCookieSameSite(),
       path: '/api',
       maxAge: ACCESS_COOKIE_MAX_AGE_MS,
     }
@@ -95,7 +99,7 @@ export class AuthService {
     return {
       httpOnly: true,
       secure: this.resolveCookieSecure(request),
-      sameSite: 'strict',
+      sameSite: this.resolveCookieSameSite(),
       path: '/api/auth',
       maxAge: this.getRefreshTtlDays() * 24 * 60 * 60 * 1000,
     }
@@ -106,13 +110,13 @@ export class AuthService {
     response.clearCookie(ACCESS_TOKEN_COOKIE, {
       httpOnly: true,
       secure,
-      sameSite: 'strict',
+      sameSite: this.resolveCookieSameSite(),
       path: '/api',
     })
     response.clearCookie(REFRESH_TOKEN_COOKIE, {
       httpOnly: true,
       secure,
-      sameSite: 'strict',
+      sameSite: this.resolveCookieSameSite(),
       path: '/api/auth',
     })
   }

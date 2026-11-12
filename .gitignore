@@ -4,6 +4,7 @@
 **/dist-ssr/
 **/build/
 **/.vite/
+**/.vercel/
 **/coverage/
 
 # Environment & Secrets (never commit real secrets)

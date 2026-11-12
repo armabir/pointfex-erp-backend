@@ -1,5 +1,17 @@
 # Pointfex ERP — Deployment Guide
 
+## Production URLs
+
+- Frontend: `https://pointfex-frontend.vercel.app`
+- Backend: `https://pointfex-backend.vercel.app`
+- Health: `https://pointfex-backend.vercel.app/api/health`
+- Readiness: `https://pointfex-backend.vercel.app/api/ready`
+
+Pushes to `main` run backend and frontend verification in GitHub Actions. Both Vercel
+production projects deploy only after every verification job succeeds. Runtime secrets
+live in Vercel and GitHub Actions secrets; real `.env` files are ignored and must never
+be committed.
+
 ## 1. Local Development
 1. Copy `backend/.env.example` -> `backend/.env` and `frontend/.env.example` -> `frontend/.env`.
 2. Start PostgreSQL, backend, and frontend:
