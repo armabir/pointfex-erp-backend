@@ -1,0 +1,22 @@
+{
+  "name": "Pointfex ERP",
+  "short_name": "Pointfex",
+  "description": "Enterprise Resource Suite for squads, treasury, and governance",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F8FA",
+  "theme_color": "#4F46E5",
+  "icons": [
+    {
+      "src": "/Logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/Logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+

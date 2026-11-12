@@ -1,0 +1,51 @@
+# Compiled Output & Dependencies
+/dist
+/build
+/node_modules
+/coverage
+/.nyc_output
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+!.env.production.example
+/secrets/
+
+# Keys, Certificates & Credentials
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+service-account*.json
+credentials*.json
+
+# Allowlist Exports, Database Dumps, Backups & Uploads
+allowed-emails*.txt
+*.sql.gz
+*.dump
+*.bak
+/backups/
+/uploads/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS & IDE Files
+.DS_Store
+Thumbs.db
+.idea
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
