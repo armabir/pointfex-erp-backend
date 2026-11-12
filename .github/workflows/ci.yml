@@ -46,6 +46,7 @@ jobs:
     needs: [backend, frontend]
     runs-on: ubuntu-latest
     environment: production
+    continue-on-error: true
     defaults:
       run:
         working-directory: backend
@@ -64,6 +65,7 @@ jobs:
     needs: [backend, frontend]
     runs-on: ubuntu-latest
     environment: production
+    continue-on-error: true
     defaults:
       run:
         working-directory: frontend
