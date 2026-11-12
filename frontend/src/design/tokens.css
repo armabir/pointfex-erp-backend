@@ -1,0 +1,73 @@
+/* Pointfex ERP Design Tokens — Single Source of Truth (Light & Dark Themes) */
+
+:root {
+  color-scheme: light;
+
+  /* Core Surfaces & Ink */
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-muted: #f1f5f9;
+  --border: #e5e7eb;
+  --text: #111827;
+  --muted: #6b7280;
+
+  /* Semantic Palette */
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-soft: rgba(79, 70, 229, 0.08);
+  --success: #16a34a;
+  --success-soft: rgba(22, 163, 74, 0.1);
+  --warning: #d97706;
+  --warning-soft: rgba(217, 119, 6, 0.1);
+  --danger: #dc2626;
+  --danger-soft: rgba(220, 38, 38, 0.1);
+  --info: #0284c7;
+  --info-soft: rgba(2, 132, 199, 0.1);
+
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 20px;
+  --text-xl: 28px;
+
+  /* Spacing & Shape */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-card: 12px;
+  --radius-control: 8px;
+
+  /* Single Soft Elevation */
+  --shadow-soft: 0 1px 3px 0 rgba(17, 24, 39, 0.06), 0 1px 2px -1px rgba(17, 24, 39, 0.04);
+}
+
+.dark {
+  color-scheme: dark;
+
+  --bg: #0b1220;
+  --surface: #111a2e;
+  --surface-muted: #17223b;
+  --border: #1f2a44;
+  --text: #e6eaf2;
+  --muted: #94a3b8;
+
+  --primary: #4f46e5;
+  --primary-hover: #6366f1;
+  --primary-soft: rgba(79, 70, 229, 0.18);
+  --success: #16a34a;
+  --success-soft: rgba(22, 163, 74, 0.18);
+  --warning: #d97706;
+  --warning-soft: rgba(217, 119, 6, 0.18);
+  --danger: #dc2626;
+  --danger-soft: rgba(220, 38, 38, 0.18);
+  --info: #0284c7;
+  --info-soft: rgba(2, 132, 199, 0.18);
+
+  --shadow-soft: 0 2px 6px -1px rgba(0, 0, 0, 0.35), 0 1px 3px -1px rgba(0, 0, 0, 0.25);
+}
+

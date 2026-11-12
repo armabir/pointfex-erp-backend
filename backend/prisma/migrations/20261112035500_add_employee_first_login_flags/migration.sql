@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "employees"
+ADD COLUMN IF NOT EXISTS "mustChangePassword" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN IF NOT EXISTS "mustEnrollMfa" BOOLEAN NOT NULL DEFAULT false;
+

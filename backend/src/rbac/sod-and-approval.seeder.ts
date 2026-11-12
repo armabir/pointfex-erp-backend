@@ -1,0 +1,281 @@
+import { ApprovalMode, PrismaClient } from '@prisma/client'
+
+export const SEED_SOD_RULES = [
+  {
+    code: 'SOD-PAYROLL',
+    name: 'Payroll Calculation, Approval & Release Separation',
+    description: 'payroll:calculate, payroll:approve_batch, and payroll:release_payment must be performed by three different people.',
+    actionCodes: ['payroll:calculate', 'payroll:approve_batch', 'payroll:release_payment'],
+    entityScope: 'SAME_RESOURCE',
+    isStrict: true,
+  },
+  {
+    code: 'SOD-PO',
+    name: 'Purchase Order Creation vs Approval',
+    description: 'Creator of a purchase order cannot approve the same purchase order.',
+    actionCodes: ['purchase_orders:create', 'purchase_orders:approve'],
+    entityScope: 'SAME_RESOURCE',
+    isStrict: true,
+  },
+  {
+    code: 'SOD-EXPENSE',
+    name: 'Expense Submission, Approval & Reimbursement',
+    description: 'Submitter, approver, and reimburser of an expense must be different people.',
+    actionCodes: ['expenses:submit', 'expenses:approve', 'expenses:reimburse'],
+    entityScope: 'SAME_RESOURCE',
+    isStrict: true,
+  },
+  {
+    code: 'SOD-INVOICE',
+    name: 'Invoice Creation, Payment Marking & Reconciliation',
+    description: 'Invoice creator, payment marker, and bank reconciler must be different people.',
+    actionCodes: ['invoices:create', 'invoices:mark_paid', 'reconciliation:perform'],
+    entityScope: 'SAME_RESOURCE',
+    isStrict: true,
+  },
+  {
+    code: 'SOD-BILL',
+    name: 'Vendor Bill Creation, Approval & Payment',
+    description: 'Vendor bill creator, approver, and payer must be different people.',
+    actionCodes: ['bills:create', 'bills:approve', 'bills:pay'],
+    entityScope: 'SAME_RESOURCE',
+    isStrict: true,
+  },
+  {
+    code: 'SOD-TASK',
+    name: 'Task Work Submission vs Approval',
+    description: 'An employee who submits work on a task cannot approve that same task.',
+    actionCodes: ['tasks:submit_work', 'tasks:approve'],
+    entityScope: 'SAME_RESOURCE',
+    isStrict: true,
+  },
+  {
+    code: 'SOD-DEPLOY',
+    name: 'Deployment Approval vs Execution',
+    description: 'Approver and executor of a deployment should be distinct individuals.',
+    actionCodes: ['deployments:approve', 'deployments:execute'],
+    entityScope: 'SAME_RESOURCE',
+    isStrict: false,
+  },
+  {
+    code: 'SOD-XP',
+    name: 'XP Adjustment vs Adjustment Approval',
+    description: 'Creator of an XP ledger adjustment cannot approve their own adjustment.',
+    actionCodes: ['xp:adjust', 'xp:approve_adjustment'],
+    entityScope: 'SAME_RESOURCE',
+    isStrict: true,
+  },
+  {
+    code: 'SOD-BONUS',
+    name: 'Bonus Creation vs Bonus Approval',
+    description: 'Bonus proposer cannot approve the same bonus payout.',
+    actionCodes: ['bonuses:create', 'bonuses:approve'],
+    entityScope: 'SAME_RESOURCE',
+    isStrict: true,
+  },
+  {
+    code: 'SOD-SALARY',
+    name: 'Compensation Setting vs Change Approval',
+    description: 'Setter of salary/compensation cannot approve the same compensation change.',
+    actionCodes: ['compensation:set', 'compensation:approve_changes'],
+    entityScope: 'SAME_RESOURCE',
+    isStrict: true,
+  },
+] as const
+
+export const SEED_APPROVAL_POLICIES = [
+  {
+    code: 'POLICY-PAYROLL-APPROVE',
+    name: 'Payroll Batch Dual Approval',
+    actionCode: 'payroll:approve_batch',
+    mode: ApprovalMode.SEQUENTIAL,
+    minApprovals: 2,
+    requiresDualApproval: true,
+    amountThreshold: null,
+    escalationAfterHours: 24,
+    timeoutHours: 72,
+    stepDefinitions: [
+      { stepOrder: 1, stepName: 'CFO / Finance Verification', requiredPermission: 'payroll:approve_batch' },
+      { stepOrder: 2, stepName: 'Executive Dual Ratification', requiredPermission: 'payroll:release_payment', escalatedToPermission: 'governance:approve_request' },
+    ],
+  },
+  {
+    code: 'POLICY-TREASURY-TRANSFER',
+    name: 'Real Bank Treasury Transfer Dual Approval',
+    actionCode: 'treasury:transfer',
+    mode: ApprovalMode.SEQUENTIAL,
+    minApprovals: 2,
+    requiresDualApproval: true,
+    amountThreshold: null,
+    escalationAfterHours: 12,
+    timeoutHours: 48,
+    stepDefinitions: [
+      { stepOrder: 1, stepName: 'CFO Authorization', requiredPermission: 'treasury:transfer' },
+      { stepOrder: 2, stepName: 'CEO / Secondary Executive Sign-Off', requiredPermission: 'treasury:withdraw', escalatedToPermission: 'system:root' },
+    ],
+  },
+  {
+    code: 'POLICY-PO-APPROVE',
+    name: 'Purchase Order Conditional Threshold Approval',
+    actionCode: 'purchase_orders:approve',
+    mode: ApprovalMode.CONDITIONAL,
+    minApprovals: 1,
+    requiresDualApproval: false,
+    amountThreshold: 50000,
+    escalationAfterHours: 24,
+    timeoutHours: 96,
+    stepDefinitions: [
+      { stepOrder: 1, stepName: 'Operations / Department Approval', requiredPermission: 'purchase_orders:approve' },
+      { stepOrder: 2, stepName: 'Finance High-Value Sign-Off (>= 50k)', requiredPermission: 'budgets:approve_request', conditionMinAmount: 50000 },
+    ],
+  },
+  {
+    code: 'POLICY-EXPENSE-APPROVE',
+    name: 'Expense Conditional Threshold Approval',
+    actionCode: 'expenses:approve',
+    mode: ApprovalMode.CONDITIONAL,
+    minApprovals: 1,
+    requiresDualApproval: false,
+    amountThreshold: 25000,
+    escalationAfterHours: 24,
+    timeoutHours: 72,
+    stepDefinitions: [
+      { stepOrder: 1, stepName: 'Manager / Ops Expense Review', requiredPermission: 'expenses:approve' },
+      { stepOrder: 2, stepName: 'CFO High-Expense Review (>= 25k)', requiredPermission: 'expenses:reimburse', conditionMinAmount: 25000 },
+    ],
+  },
+  {
+    code: 'POLICY-INVOICE-PAID',
+    name: 'Invoice Mark Paid Verification',
+    actionCode: 'invoices:mark_paid',
+    mode: ApprovalMode.SEQUENTIAL,
+    minApprovals: 1,
+    requiresDualApproval: false,
+    amountThreshold: null,
+    escalationAfterHours: 48,
+    timeoutHours: 120,
+    stepDefinitions: [
+      { stepOrder: 1, stepName: 'Finance Invoice Settlement', requiredPermission: 'invoices:mark_paid' },
+    ],
+  },
+  {
+    code: 'POLICY-TASK-APPROVE',
+    name: 'Task Deliverable Approval',
+    actionCode: 'tasks:approve',
+    mode: ApprovalMode.SEQUENTIAL,
+    minApprovals: 1,
+    requiresDualApproval: false,
+    amountThreshold: null,
+    escalationAfterHours: 48,
+    timeoutHours: 168,
+    stepDefinitions: [
+      { stepOrder: 1, stepName: 'PM / Lead Task Sign-Off', requiredPermission: 'tasks:approve' },
+    ],
+  },
+  {
+    code: 'POLICY-XP-ADJUST',
+    name: 'XP Ledger Adjustment Approval',
+    actionCode: 'xp:approve_adjustment',
+    mode: ApprovalMode.SEQUENTIAL,
+    minApprovals: 1,
+    requiresDualApproval: false,
+    amountThreshold: null,
+    escalationAfterHours: 24,
+    timeoutHours: 72,
+    stepDefinitions: [
+      { stepOrder: 1, stepName: 'HR / Lead XP Audit', requiredPermission: 'xp:approve_adjustment' },
+    ],
+  },
+  {
+    code: 'POLICY-BONUS-APPROVE',
+    name: 'Bonus Payout Approval',
+    actionCode: 'bonuses:approve',
+    mode: ApprovalMode.PARALLEL,
+    minApprovals: 2,
+    requiresDualApproval: false,
+    amountThreshold: null,
+    escalationAfterHours: 24,
+    timeoutHours: 72,
+    stepDefinitions: [
+      { stepOrder: 1, stepName: 'HR Compensation Review', requiredPermission: 'bonuses:approve' },
+      { stepOrder: 2, stepName: 'Finance Budget Sign-Off', requiredPermission: 'budgets:approve_request' },
+    ],
+  },
+  {
+    code: 'POLICY-SALARY-CHANGE',
+    name: 'Compensation Change Dual Approval',
+    actionCode: 'compensation:approve_changes',
+    mode: ApprovalMode.SEQUENTIAL,
+    minApprovals: 2,
+    requiresDualApproval: true,
+    amountThreshold: null,
+    escalationAfterHours: 24,
+    timeoutHours: 72,
+    stepDefinitions: [
+      { stepOrder: 1, stepName: 'CHRO Salary Review', requiredPermission: 'compensation:approve_changes' },
+      { stepOrder: 2, stepName: 'CFO / CEO Dual Ratification', requiredPermission: 'budgets:approve_request' },
+    ],
+  },
+]
+
+export async function seedSodAndApprovalPolicies(prisma: PrismaClient) {
+  for (const rule of SEED_SOD_RULES) {
+    await prisma.sodRule.upsert({
+      where: { code: rule.code },
+      update: {
+        name: rule.name,
+        description: rule.description,
+        actionCodes: [...rule.actionCodes],
+        entityScope: rule.entityScope,
+        isStrict: rule.isStrict,
+        isActive: true,
+      },
+      create: {
+        code: rule.code,
+        name: rule.name,
+        description: rule.description,
+        actionCodes: [...rule.actionCodes],
+        entityScope: rule.entityScope,
+        isStrict: rule.isStrict,
+        isActive: true,
+      },
+    })
+  }
+
+  for (const pol of SEED_APPROVAL_POLICIES) {
+    await prisma.approvalPolicy.upsert({
+      where: { code: pol.code },
+      update: {
+        name: pol.name,
+        actionCode: pol.actionCode,
+        mode: pol.mode,
+        minApprovals: pol.minApprovals,
+        requiresDualApproval: pol.requiresDualApproval,
+        amountThreshold: pol.amountThreshold,
+        stepDefinitions: pol.stepDefinitions as any,
+        escalationAfterHours: pol.escalationAfterHours,
+        timeoutHours: pol.timeoutHours,
+        isActive: true,
+      },
+      create: {
+        code: pol.code,
+        name: pol.name,
+        actionCode: pol.actionCode,
+        mode: pol.mode,
+        minApprovals: pol.minApprovals,
+        requiresDualApproval: pol.requiresDualApproval,
+        amountThreshold: pol.amountThreshold,
+        stepDefinitions: pol.stepDefinitions as any,
+        escalationAfterHours: pol.escalationAfterHours,
+        timeoutHours: pol.timeoutHours,
+        isActive: true,
+      },
+    })
+  }
+
+  return {
+    sodRulesSeeded: SEED_SOD_RULES.length,
+    approvalPoliciesSeeded: SEED_APPROVAL_POLICIES.length,
+  }
+}
+

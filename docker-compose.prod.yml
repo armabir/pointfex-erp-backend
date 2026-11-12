@@ -1,0 +1,58 @@
+name: pointfex-erp-production
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pointfex-erp-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-3000}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      DIRECT_URL: ${DIRECT_URL:?DIRECT_URL is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_DAYS: ${JWT_REFRESH_EXPIRES_DAYS:-7}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      AUTHZ_MODE: ${AUTHZ_MODE:-enforce}
+      PBAC_MODE: ${PBAC_MODE:-enforce}
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required}
+      THROTTLE_BYPASS: 'false'
+      BLOCKED_IPS: ${BLOCKED_IPS:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      TEMP_PASSWORD_TTL_HOURS: ${TEMP_PASSWORD_TTL_HOURS:-24}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+      FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL is required}
+      LOGIN_ALLOWLIST_REQUIRED: ${LOGIN_ALLOWLIST_REQUIRED:-true}
+      ALLOW_DOMAIN_RULES: 'false'
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - pointfex_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+    container_name: pointfex-erp-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - '${FRONTEND_PORT:-80}:80'
+    networks:
+      - pointfex_net
+
+networks:
+  pointfex_net:
+    driver: bridge

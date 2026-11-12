@@ -1,0 +1,46 @@
+name: pointfex-erp-local
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pointfex-erp-local-pg
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pointfex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pointfex}
+      POSTGRES_DB: ${POSTGRES_DB:-pointfex_erp}
+    ports:
+      - '5432:5432'
+    volumes:
+      - pointfex_local_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-pointfex} -d ${POSTGRES_DB:-pointfex_erp}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    ports:
+      - '3000:3000'
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+    depends_on:
+      - backend
+    ports:
+      - '5173:80'
+
+volumes:
+  pointfex_local_pgdata:
+
