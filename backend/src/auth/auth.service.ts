@@ -1151,7 +1151,9 @@ export class AuthService {
       throw new ForbiddenException('Account unavailable.')
     }
 
-    if (employee.mfaEnabled) {
+    const requireGoogleLoginMfa =
+      this.configService?.get<string>('GOOGLE_LOGIN_REQUIRE_MFA') === 'true'
+    if (requireGoogleLoginMfa && employee.mfaEnabled) {
       const mfaResult = await this.verifyLoginMfaOrRecovery(
         employee.id,
         employee.mfaSecret,
