@@ -47,7 +47,7 @@ export const envValidationSchema = Joi.object({
   JWT_EXPIRES_IN: Joi.string().default('15m'),
   JWT_REFRESH_EXPIRES_DAYS: Joi.number().integer().min(1).max(90).default(7),
   COOKIE_SECURE: Joi.string().valid('true', 'false').optional(),
-  COOKIE_SAME_SITE: Joi.string().valid('strict', 'lax', 'none').optional(),
+  COOKIE_SAMESITE: Joi.string().valid('strict', 'lax', 'none').optional(),
   AUTHZ_MODE: Joi.string().valid('enforce', 'shadow', 'legacy').default('shadow'),
   PBAC_MODE: Joi.string().valid('enforce', 'shadow', 'legacy').default('shadow'),
   REDIS_URL: Joi.string().uri().allow('').optional(),
