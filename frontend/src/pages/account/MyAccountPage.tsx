@@ -325,7 +325,9 @@ export function MyAccountPage() {
                 type="button"
                 size="sm"
                 variant="secondary"
-                onClick={() => window.location.assign('/api/auth/google')}
+                onClick={() =>
+                  window.location.assign(`${window.location.origin}/api/auth/google`)
+                }
               >
                 Link Google account
               </Button>

@@ -222,7 +222,7 @@ export function LoginPage() {
   const handleGoogleSignIn = () => {
     setErrorMsg(null)
     setIsSubmitting(true)
-    window.location.assign('/api/auth/google')
+    window.location.assign(`${window.location.origin}/api/auth/google`)
   }
 
   const handleResetSubmit = async (e: React.FormEvent) => {
