@@ -414,13 +414,15 @@ export function CeoRoleMatrixPage() {
     })
   }
 
-  const executeMatrixConfirm = async (_stepUpPhrase?: string, _passwordConfirm?: string, mfaCode?: string) => {
+ const executeMatrixConfirm = async (stepUpPhrase?: string, _passwordConfirm?: string) => {
     if (!matrixConfirm) return
+    const mfaCode = stepUpPhrase || ''
+
     setIsConfirmSubmitting(true)
     if (matrixConfirm.kind === 'save_permissions') setIsSaving(true)
     try {
       if (matrixConfirm.kind === 'save_permissions') {
-        await erpApi.replaceRolePermissions(matrixConfirm.role.id, matrixConfirm.codes, mfaCode || '')
+        await erpApi.replaceRolePermissions(matrixConfirm.role.id, matrixConfirm.codes, mfaCode)
         showToast(
           `Role capabilities for "${matrixConfirm.role.name}" successfully saved. (Takes effect immediately)`,
           'success',
