@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   ForbiddenException,
+  BadRequestException,
   Optional,
   Inject,
 } from '@nestjs/common'
@@ -367,7 +368,7 @@ export class EmployeesService {
     }
   }
 
-  async findAll(roleCategory?: string, teamId?: string) {
+  async findAll(roleCategory?: string, teamId?: string, actor?: AuthenticatedUser) {
     const where: Prisma.EmployeeWhereInput = {}
 
     if (teamId) {
@@ -421,6 +422,27 @@ export class EmployeesService {
       },
       orderBy: { id: 'asc' },
     })
+
+    const hasAdminAccess =
+      actor?.roles?.includes('system:root') ||
+      (actor?.role || '').toLowerCase() === 'ceo' ||
+      actor?.roles?.some((r) => ['cto', 'chro'].includes(r.toLowerCase()))
+
+    if (!hasAdminAccess) {
+      // Minimal DTO for non-admin directory callers
+      return employees.map((emp) => ({
+        id: emp.id,
+        name: emp.name,
+        photo: emp.avatarUrl || null,
+        avatarUrl: emp.avatarUrl || null,
+        initials: emp.initials,
+        title: emp.title,
+        department: emp.positionAssignments?.[0]?.position?.department || 'General',
+        squads: emp.teamMemberships?.map((tm) => tm.team?.name).filter(Boolean) || [],
+        email: emp.email,
+        status: emp.status,
+      }))
+    }
 
     return employees.map(stripPasswordHash)
   }
@@ -625,6 +647,151 @@ export class EmployeesService {
           location: updated.location,
         },
         reason: reason?.trim() || 'Profile updated by authorized administrator',
+      })
+    }
+
+    return stripPasswordHash(updated)
+  }
+
+  async updateUserIdentity(
+    id: string,
+    body: { name?: string; email?: string; addToAllowlist?: boolean; reason: string },
+    actor: AuthenticatedUser,
+  ) {
+    if (!body.reason || body.reason.trim().length < 10) {
+      throw new BadRequestException('Written reason must be at least 10 characters.')
+    }
+
+    const employee = await this.prisma.employee.findUnique({
+      where: { id },
+    })
+    if (!employee) throw new NotFoundException(`Employee "${id}" not found.`)
+
+    const beforeState = { name: employee.name, email: employee.email }
+    const newName = body.name?.trim()
+    const newEmail = body.email?.trim().toLowerCase()
+    let emailChanged = false
+
+    if (newEmail && newEmail !== employee.email.toLowerCase()) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+        throw new BadRequestException('A valid email address is required.')
+      }
+
+      const existingWithEmail = await this.prisma.employee.findUnique({
+        where: { email: newEmail },
+      })
+      if (existingWithEmail && existingWithEmail.id !== id) {
+        throw new BadRequestException(`Email "${newEmail}" is already in use by another user.`)
+      }
+
+      // Check allowlist
+      const allowlistEntry = await this.prisma.loginAllowlistEntry.findFirst({
+        where: { pattern: newEmail, isActive: true },
+      })
+
+      if (!allowlistEntry) {
+        if (body.addToAllowlist !== false) {
+          await this.prisma.loginAllowlistEntry.upsert({
+            where: { pattern: newEmail },
+            update: { isActive: true },
+            create: {
+              pattern: newEmail,
+              isDomain: false,
+              isActive: true,
+              addedById: actor.id,
+              note: `Added during CEO email identity update for ${employee.name}`,
+            },
+          })
+        } else {
+          throw new BadRequestException(
+            `The new email "${newEmail}" must be on the active login allowlist.`,
+          )
+        }
+      }
+
+      emailChanged = true
+    }
+
+    const now = new Date()
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (emailChanged) {
+        // Detach linked Google identity
+        await tx.externalIdentity.deleteMany({
+          where: { employeeId: id, provider: 'google' },
+        })
+
+        // Revoke all existing sessions
+        await tx.refreshToken.updateMany({
+          where: { employeeId: id, revokedAt: null },
+          data: { revokedAt: now },
+        })
+        await tx.securitySession.updateMany({
+          where: { employeeId: id, isRevoked: false },
+          data: { isRevoked: true, revokedAt: now },
+        })
+      }
+
+      const initials = newName ? buildInitials(newName) : employee.initials
+      const saved = await tx.employee.update({
+        where: { id },
+        data: {
+          name: newName || employee.name,
+          initials,
+          email: newEmail || employee.email,
+          authVersion: emailChanged ? { increment: 1 } : undefined,
+        },
+      })
+
+      await tx.employeeChangeHistory.create({
+        data: {
+          employeeId: id,
+          actorId: actor.id,
+          actionKey: 'users:edit_identity',
+          changeType: 'PROFILE',
+          beforeState: beforeState as any,
+          afterState: { name: saved.name, email: saved.email } as any,
+          reason: body.reason.trim(),
+        },
+      })
+
+      if (this.auditLogger) {
+        await this.auditLogger.log(
+          {
+            actorId: actor.id,
+            actorName: actor.name || 'Chief Executive Officer',
+            actorEmail: actor.email || 'ceo@pointfex.com',
+            actorRole: 'CEO',
+            action: 'USER_IDENTITY_UPDATED',
+            actionCode: 'IDENTITY_EMAIL_NAME_UPDATED',
+            severity: 'CRITICAL',
+            entityType: 'user',
+            entityId: id,
+            entityTitle: saved.name,
+            description: `CEO updated user identity for ${employee.name}: name "${beforeState.name}" -> "${saved.name}", email "${beforeState.email}" -> "${saved.email}". Sessions revoked and Google detached.`,
+            category: 'governance',
+            badgeColor: 'rose',
+            outcome: 'APPLIED_IMMEDIATELY',
+            mfaVerified: true,
+          },
+          tx,
+        )
+      }
+
+      return saved
+    })
+
+    if (emailChanged && this.mailService) {
+      void this.mailService.sendEmail({
+        to: beforeState.email,
+        subject: 'Security Alert: Your Pointfex ERP account email has changed',
+        text: `Your account email has been updated from ${beforeState.email} to ${newEmail} by the Chief Executive Officer. Any active sessions were signed out for your security.`,
+        html: `<p>Your account email has been updated from <strong>${beforeState.email}</strong> to <strong>${newEmail}</strong> by the Chief Executive Officer. Any active sessions were signed out for your security.</p>`,
+      })
+      void this.mailService.sendEmail({
+        to: newEmail!,
+        subject: 'Pointfex ERP: Account Email Confirmed',
+        text: `Your Pointfex ERP account is now registered to this email address (${newEmail}).`,
+        html: `<p>Your Pointfex ERP account is now registered to this email address (<strong>${newEmail}</strong>).</p>`,
       })
     }
 

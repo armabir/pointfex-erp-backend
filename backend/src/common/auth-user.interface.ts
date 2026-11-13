@@ -4,6 +4,7 @@ export interface AuthenticatedUser {
   email?: string
   name?: string
   role: string
+  roles?: string[]
   permissions?: string[]
   mustChangePassword?: boolean
   mustEnrollMfa?: boolean

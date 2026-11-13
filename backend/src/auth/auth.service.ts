@@ -21,6 +21,7 @@ import { FreshMfaService } from '../rbac/fresh-mfa.service'
 import { MailService } from '../mail/mail.service'
 import { LoginAllowlistService } from './login-allowlist.service'
 import { verifyTotpCode } from '../common/security-policy.util'
+import { assertPasswordPolicy } from '../common/password-policy.util'
 import { ChangePasswordDto, LoginDto } from './dto/auth.dto'
 import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE, resolveCanonicalRoleSlug } from './jwt.strategy'
 
@@ -114,18 +115,33 @@ export class AuthService {
   private clearAuthCookies(request: Request, response: Response): void {
     const sameSite = this.resolveCookieSameSite()
     const secure = sameSite === 'none' ? true : this.resolveCookieSecure(request)
-    response.clearCookie(ACCESS_TOKEN_COOKIE, {
-      httpOnly: true,
-      secure,
-      sameSite,
-      path: '/api',
-    })
-    response.clearCookie(REFRESH_TOKEN_COOKIE, {
-      httpOnly: true,
-      secure,
-      sameSite,
-      path: '/api/auth',
-    })
+    const paths = ['/', '/api', '/api/auth']
+    const cookieNames = [
+      ACCESS_TOKEN_COOKIE,
+      REFRESH_TOKEN_COOKIE,
+      'pointfex_jwt',
+      'jwt',
+      'token',
+      '__Host-access_token',
+      '__Host-refresh_token',
+    ]
+
+    for (const name of cookieNames) {
+      for (const path of paths) {
+        response.clearCookie(name, {
+          httpOnly: true,
+          secure,
+          sameSite,
+          path,
+        })
+      }
+    }
+
+    try {
+      response.setHeader('Clear-Site-Data', '"cache", "cookies", "storage"')
+    } catch {
+      // ignore header write errors
+    }
   }
 
   private async issueSessionCookies(
@@ -547,7 +563,13 @@ export class AuthService {
       throw new ForbiddenException('New password must differ from current temporary password.')
     }
 
+    await assertPasswordPolicy(this.prisma, employee.id, dto.newPassword, {
+      name: employee.name,
+      email: employee.email,
+    })
+
     const nextHash = await bcrypt.hash(dto.newPassword, 12)
+    const now = new Date()
     const updated = await this.prisma.employee.update({
       where: { id: employee.id },
       data: {
@@ -563,6 +585,26 @@ export class AuthService {
       },
     })
 
+    // Record password history (no reuse of last 5)
+    if ((this.prisma as any).passwordHistory?.create) {
+      await (this.prisma as any).passwordHistory.create({
+        data: {
+          employeeId: employee.id,
+          passwordHash: nextHash,
+        },
+      })
+    }
+
+    // Revoke all existing sessions on password change
+    await this.prisma.refreshToken.updateMany({
+      where: { employeeId: employee.id, revokedAt: null },
+      data: { revokedAt: now },
+    })
+    await this.prisma.securitySession.updateMany({
+      where: { employeeId: employee.id, isRevoked: false },
+      data: { isRevoked: true, revokedAt: now },
+    })
+
     await this.auditLogger?.log({
       actorId: employee.id,
       actorName: employee.name,
@@ -573,7 +615,7 @@ export class AuthService {
       severity: 'INFO',
       entityType: 'Employee',
       entityId: employee.id,
-      description: `${employee.name} rotated account password.`,
+      description: `${employee.name} rotated account password. All active sessions revoked.`,
       category: 'security',
       badgeColor: 'emerald',
     })
@@ -591,14 +633,47 @@ export class AuthService {
 
     if (rawRefreshToken) {
       const tokenHash = sha256Hex(rawRefreshToken)
-      await this.prisma.refreshToken.updateMany({
-        where: { tokenHash, revokedAt: null },
-        data: { revokedAt: new Date() },
+      const tokenRecord = await this.prisma.refreshToken.findUnique({
+        where: { tokenHash },
       })
+      if (tokenRecord) {
+        // Revoke the entire family
+        await this.prisma.refreshToken.updateMany({
+          where: { familyId: tokenRecord.familyId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        })
+        // Close the security session
+        await this.prisma.securitySession.updateMany({
+          where: { employeeId: tokenRecord.employeeId, isRevoked: false },
+          data: { isRevoked: true, revokedAt: new Date() },
+        })
+      }
     }
 
     this.clearAuthCookies(request, response)
     return { loggedOut: true }
+  }
+
+  async logoutAllDevices(actor: AuthenticatedUser, request: Request, response: Response) {
+    const userId = actor.employeeId || actor.id
+    const now = new Date()
+    await Promise.all([
+      this.prisma.refreshToken.updateMany({
+        where: { employeeId: userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+      this.prisma.securitySession.updateMany({
+        where: { employeeId: userId, isRevoked: false },
+        data: { isRevoked: true, revokedAt: now },
+      }),
+      this.prisma.employee.update({
+        where: { id: userId },
+        data: { authVersion: { increment: 1 } },
+      }),
+    ])
+
+    this.clearAuthCookies(request, response)
+    return { loggedOutAll: true }
   }
 
   async getProfile(actor: AuthenticatedUser) {
@@ -831,6 +906,11 @@ export class AuthService {
         throw new UnauthorizedException('This setup link has already been used or expired.')
       }
 
+      await assertPasswordPolicy(this.prisma, invitedEmployee.id, body.newPassword, {
+        name: invitedEmployee.name,
+        email: invitedEmployee.email,
+      })
+
       const nextHash = await bcrypt.hash(body.newPassword, 12)
       const usedAt = new Date()
       await this.prisma.$transaction(async (tx) => {
@@ -846,6 +926,14 @@ export class AuthService {
             authVersion: { increment: 1 },
           },
         })
+        if ((tx as any).passwordHistory?.create) {
+          await (tx as any).passwordHistory.create({
+            data: {
+              employeeId: invitedEmployee.id,
+              passwordHash: nextHash,
+            },
+          })
+        }
         await tx.refreshToken.updateMany({
           where: { employeeId: invitedEmployee.id, revokedAt: null },
           data: { revokedAt: usedAt },
@@ -907,6 +995,11 @@ export class AuthService {
       })
     }
 
+    await assertPasswordPolicy(this.prisma, employee.id, body.newPassword, {
+      name: employee.name,
+      email: employee.email,
+    })
+
     const nextHash = await bcrypt.hash(body.newPassword, 12)
     await this.prisma.employee.update({
       where: { id: employee.id },
@@ -916,9 +1009,21 @@ export class AuthService {
         authVersion: { increment: 1 },
       },
     })
+    if ((this.prisma as any).passwordHistory?.create) {
+      await (this.prisma as any).passwordHistory.create({
+        data: {
+          employeeId: employee.id,
+          passwordHash: nextHash,
+        },
+      })
+    }
     await this.prisma.refreshToken.updateMany({
       where: { employeeId: employee.id, revokedAt: null },
       data: { revokedAt: new Date() },
+    })
+    await this.prisma.securitySession.updateMany({
+      where: { employeeId: employee.id, isRevoked: false },
+      data: { isRevoked: true, revokedAt: new Date() },
     })
     return { reset: true }
   }
@@ -1395,22 +1500,5 @@ export class AuthService {
       }),
     ])
     return { revoked: true, id: sessionId }
-  }
-
-  async unlinkGoogleIdentity(actor: AuthenticatedUser) {
-    const employeeId = actor.employeeId || actor.id
-    const employee = await this.prisma.employee.findUnique({
-      where: { id: employeeId },
-      select: { passwordHash: true },
-    })
-    if (!employee?.passwordHash) {
-      throw new ForbiddenException(
-        'Set a local password before unlinking your Google account so you do not lock yourself out.',
-      )
-    }
-    await this.prisma.externalIdentity.deleteMany({
-      where: { employeeId, provider: 'google' },
-    })
-    return { unlinked: true }
   }
 }

@@ -29,7 +29,7 @@ import { Button } from '../../components/common/Button'
 import { EmptyState } from '../../components/common/EmptyState'
 import { SkeletonCard } from '../../components/common/Skeleton'
 import { Tabs } from '../../components/common/Tabs'
-import { SecurityConfirmModal } from '../../components/common/SecurityConfirmModal'
+import { MfaConfirmModal } from '../../components/common/MfaConfirmModal'
 import { ApprovalInboxPage } from './ApprovalInboxPage'
 
 export function UnifiedInboxPage() {
@@ -37,12 +37,10 @@ export function UnifiedInboxPage() {
     useApp()
   const { can, canAny } = usePermissions()
 
-  const canUseWorkflowConsole = canAny([
-    'approvals:read',
-    'approvals:create',
-    'approvals:approve',
-    'governance:approve_request',
-  ])
+  const canAdminEngine =
+    canAny(['approvals:manage', 'governance:manage_rules', 'approvals:admin']) ||
+    currentUser?.role === 'system:root' ||
+    Boolean((currentUser as any)?.roles?.includes?.('system:root'))
 
   const [tab, setTab] = useState<'queue' | 'workflows'>('queue')
   const [typeFilter, setTypeFilter] = useState<UnifiedInboxItemType | 'all'>('all')
@@ -61,8 +59,8 @@ export function UnifiedInboxPage() {
   const [myReceivedDelegations, setMyReceivedDelegations] = useState<any[]>([])
   const [pendingDelegations, setPendingDelegations] = useState<any[]>([])
   const [budgetRequests, setBudgetRequests] = useState<any[]>([])
-  const [pendingConfirm, setPendingConfirm] = useState<{
-    items: UnifiedInboxItem[]
+  const [activeMfaItem, setActiveMfaItem] = useState<{
+    item: UnifiedInboxItem
     decision: 'approve' | 'reject'
   } | null>(null)
 
@@ -75,7 +73,7 @@ export function UnifiedInboxPage() {
 
   const fetchSources = useCallback(async () => {
     const [approvalsRes, accessRes, emailReqRes, myDelRes, allDelRes, budgetsRes] = await Promise.all([
-      canUseWorkflowConsole ? erpApi.getApprovalInbox().catch(() => []) : Promise.resolve([]),
+      erpApi.getApprovalInbox().catch(() => []),
       canApproveAccess
         ? erpApi.listAccessRequests({ status: 'PENDING' }).catch(() => [])
         : Promise.resolve([]),
@@ -93,7 +91,7 @@ export function UnifiedInboxPage() {
       allDelegations: Array.isArray(allDelRes) ? allDelRes : [],
       budgets: Array.isArray(budgetsRes) ? budgetsRes : [],
     }
-  }, [canUseWorkflowConsole, canApproveAccess, canApproveEmailRequests, canApproveDelegations, canApproveBudgets])
+  }, [canApproveAccess, canApproveEmailRequests, canApproveDelegations, canApproveBudgets])
 
   const reloadInbox = useCallback(async () => {
     setIsLoading(true)
@@ -201,78 +199,97 @@ export function UnifiedInboxPage() {
     [currentUser?.id, markNotificationRead],
   )
 
-  const executeDecisionForItems = useCallback(
-    async (items: UnifiedInboxItem[], decision: 'approve' | 'reject', mfaCode?: string) => {
-      setIsMutating(true)
-      let okCount = 0
-      try {
-        for (const item of items) {
-          const reason =
-            reasonDrafts[item.id]?.trim() ||
-            (decision === 'approve' ? 'Approved via Unified Inbox' : 'Rejected via Unified Inbox')
+  const openMfaDecision = useCallback(
+    (item: UnifiedInboxItem, decision: 'approve' | 'reject') => {
+      setActiveMfaItem({ item, decision })
+    },
+    [],
+  )
 
-          if (item.type === 'approval') {
-            if (decision === 'approve') await erpApi.approveWorkflowStep(item.sourceId, reason)
-            else await erpApi.rejectWorkflowStep(item.sourceId, reason)
-          } else if (item.type === 'task_review') {
-            if (decision === 'approve') await erpApi.approveTask(item.sourceId, { feedback: reason })
-            else await erpApi.rejectTask(item.sourceId, reason)
-          } else if (item.type === 'access_request') {
-            if (decision === 'approve') await erpApi.approveAccessRequest(item.sourceId, reason)
-            else await erpApi.rejectAccessRequest(item.sourceId, reason)
-          } else if (item.type === 'email_request') {
-            if (decision === 'approve') {
-              await erpApi.approveAllowlistEmailRequest(item.sourceId, mfaCode || '', reason)
-            } else {
-              await erpApi.rejectAllowlistEmailRequest(item.sourceId, mfaCode || '', reason)
-            }
-          } else if (item.type === 'delegation' && item.id.startsWith('delegation_approve:')) {
-            if (decision === 'approve') await erpApi.approveDelegation(item.sourceId)
-            else await erpApi.revokeDelegation(item.sourceId, reason)
-          } else if (item.type === 'budget_request') {
-            if (decision === 'approve') {
-              await erpApi.approveBudgetRequest(item.sourceId, {
-                approvedAmount: item.amountBDT ?? 0,
-                feedback: reason,
-              })
-            } else {
-              await erpApi.rejectBudgetRequest(item.sourceId, reason)
-            }
+  const handleMfaDecision = useCallback(
+    async (
+      item: UnifiedInboxItem,
+      decision: 'approve' | 'reject',
+      mfaCode: string,
+      reason?: string,
+    ) => {
+      setIsMutating(true)
+      const effectiveReason =
+        reason?.trim() ||
+        (decision === 'approve' ? 'Approved via Unified Inbox' : 'Rejected via Unified Inbox')
+
+      try {
+        if (item.type === 'approval') {
+          if (decision === 'approve') {
+            await erpApi.approveWorkflowStep(item.sourceId, effectiveReason, mfaCode)
+          } else {
+            await erpApi.rejectWorkflowStep(item.sourceId, effectiveReason, mfaCode)
           }
-          okCount++
+        } else if (item.type === 'access_request') {
+          if (decision === 'approve') {
+            await erpApi.approveAccessRequest(item.sourceId, {
+              reason: effectiveReason,
+              mfaCode,
+            })
+          } else {
+            await erpApi.rejectAccessRequest(item.sourceId, {
+              reason: effectiveReason,
+              mfaCode,
+            })
+          }
+        } else if (item.type === 'email_request') {
+          if (decision === 'approve') {
+            await erpApi.approveAllowlistEmailRequest(item.sourceId, mfaCode, effectiveReason)
+          } else {
+            await erpApi.rejectAllowlistEmailRequest(item.sourceId, mfaCode, effectiveReason)
+          }
+        } else if (item.type === 'budget_request') {
+          if (decision === 'approve') {
+            await erpApi.approveBudgetRequest(
+              item.sourceId,
+              {
+                approvedAmount: item.amountBDT ?? 0,
+                feedback: effectiveReason,
+              },
+              mfaCode,
+            )
+          } else {
+            await erpApi.rejectBudgetRequest(item.sourceId, effectiveReason, mfaCode)
+          }
+        } else if (item.type === 'delegation' && item.id.startsWith('delegation_approve:')) {
+          if (decision === 'approve') {
+            await erpApi.approveDelegation(item.sourceId)
+          } else {
+            await erpApi.revokeDelegation(item.sourceId, effectiveReason)
+          }
+        } else if (item.type === 'task_review') {
+          if (decision === 'approve') {
+            await erpApi.approveTask(item.sourceId, { feedback: effectiveReason })
+          } else {
+            await erpApi.rejectTask(item.sourceId, effectiveReason)
+          }
         }
-        markReadState(
-          items.map((i) => i.id),
-          true,
-        )
-        setSelectedIds(new Set())
-        setPendingConfirm(null)
+
+        // Immediately animate out from local state
+        setApprovals((prev) => prev.filter((a) => a.id !== item.sourceId))
+        setAccessRequests((prev) => prev.filter((r) => r.id !== item.sourceId))
+        setEmailRequests((prev) => prev.filter((e) => e.id !== item.sourceId))
+        setBudgetRequests((prev) => prev.filter((b) => b.id !== item.sourceId))
+        markReadState([item.id], true)
+        setActiveMfaItem(null)
+
         showToast(
-          `${decision === 'approve' ? 'Approved' : 'Rejected'} ${okCount} item${okCount === 1 ? '' : 's'}.`,
+          `${decision === 'approve' ? 'Approved' : 'Rejected'}: ${item.title}`,
           decision === 'approve' ? 'success' : 'info',
         )
-        await Promise.all([reloadInbox(), refreshPermissions()])
-      } catch (err: any) {
-        showToast(err?.message || 'Action blocked by policy or SoD rule.', 'error')
+
+        void reloadInbox()
+        void refreshPermissions()
       } finally {
         setIsMutating(false)
       }
     },
-    [reasonDrafts, markReadState, showToast, reloadInbox, refreshPermissions],
-  )
-
-  const requestDecision = useCallback(
-    (items: UnifiedInboxItem[], decision: 'approve' | 'reject') => {
-      const actionable = items.filter((i) => (decision === 'approve' ? i.canApprove : i.canReject))
-      if (actionable.length === 0) return
-      const needsConfirm = decision === 'reject' || actionable.some((i) => i.isCritical)
-      if (needsConfirm) {
-        setPendingConfirm({ items: actionable, decision })
-        return
-      }
-      void executeDecisionForItems(actionable, decision)
-    },
-    [executeDecisionForItems],
+    [markReadState, reloadInbox, refreshPermissions, showToast],
   )
 
   // Keyboard shortcuts: j/k move, a approve, r reject, Enter open/expand
@@ -294,10 +311,10 @@ export function UnifiedInboxPage() {
         setFocusedIndex((prev) => Math.max(0, prev - 1))
       } else if (e.key === 'a' && currentItem?.canApprove) {
         e.preventDefault()
-        requestDecision([currentItem], 'approve')
+        openMfaDecision(currentItem, 'approve')
       } else if (e.key === 'r' && currentItem?.canReject) {
         e.preventDefault()
-        requestDecision([currentItem], 'reject')
+        openMfaDecision(currentItem, 'reject')
       } else if (e.key === 'Enter' && currentItem) {
         e.preventDefault()
         markReadState([currentItem.id], true)
@@ -306,11 +323,65 @@ export function UnifiedInboxPage() {
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [tab, filteredItems, focusedIndex, requestDecision, markReadState])
+  }, [tab, filteredItems, focusedIndex, openMfaDecision, markReadState])
 
   const selectedItems = useMemo(
     () => filteredItems.filter((i) => selectedIds.has(i.id)),
     [filteredItems, selectedIds],
+  )
+
+  const hasSensitiveSelected = useMemo(
+    () =>
+      selectedItems.some(
+        (i) =>
+          i.type === 'access_request' ||
+          i.type === 'approval' ||
+          i.type === 'email_request' ||
+          i.type === 'budget_request',
+      ),
+    [selectedItems],
+  )
+
+  const executeBulkDecisionForNonSensitive = useCallback(
+    async (items: UnifiedInboxItem[], decision: 'approve' | 'reject') => {
+      const nonSensitive = items.filter(
+        (i) =>
+          i.type !== 'access_request' &&
+          i.type !== 'approval' &&
+          i.type !== 'email_request' &&
+          i.type !== 'budget_request',
+      )
+      if (nonSensitive.length === 0) return
+      setIsMutating(true)
+      let okCount = 0
+      try {
+        for (const item of nonSensitive) {
+          const reason =
+            reasonDrafts[item.id]?.trim() ||
+            (decision === 'approve' ? 'Approved via Unified Inbox' : 'Rejected via Unified Inbox')
+          if (item.type === 'task_review') {
+            if (decision === 'approve') await erpApi.approveTask(item.sourceId, { feedback: reason })
+            else await erpApi.rejectTask(item.sourceId, reason)
+          }
+          okCount++
+        }
+        markReadState(
+          nonSensitive.map((i) => i.id),
+          true,
+        )
+        setSelectedIds(new Set())
+        showToast(
+          `${decision === 'approve' ? 'Approved' : 'Rejected'} ${okCount} task item${okCount === 1 ? '' : 's'}.`,
+          decision === 'approve' ? 'success' : 'info',
+        )
+        await reloadInbox()
+      } catch (err: any) {
+        showToast(err?.message || 'Bulk action failed', 'error')
+      } finally {
+        setIsMutating(false)
+      }
+    },
+    [reasonDrafts, markReadState, showToast, reloadInbox],
   )
 
   const filterTypes: Array<UnifiedInboxItemType | 'all'> = [
@@ -337,18 +408,18 @@ export function UnifiedInboxPage() {
         }
       />
 
-      {canUseWorkflowConsole && (
+      {canAdminEngine && (
         <Tabs
           tabs={[
             { id: 'queue', label: 'Action Queue', count: allItems.length },
-            { id: 'workflows', label: 'Workflow Initiator & SoD' },
+            { id: 'workflows', label: 'Approval Engine Admin' },
           ]}
           activeId={tab}
           onChange={(id) => setTab(id as 'queue' | 'workflows')}
         />
       )}
 
-      {tab === 'workflows' && canUseWorkflowConsole ? (
+      {tab === 'workflows' && canAdminEngine ? (
         <ApprovalInboxPage />
       ) : (
         <div className="space-y-4">
@@ -405,39 +476,61 @@ export function UnifiedInboxPage() {
               </div>
 
               {selectedItems.length > 0 && (
-                <div className="pt-2 border-t border-[var(--border)] flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-[13px] font-medium text-[var(--text)]">
-                    {selectedItems.length} selected
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() =>
-                        markReadState(
-                          selectedItems.map((i) => i.id),
-                          true,
-                        )
-                      }
-                    >
-                      Mark Read
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      disabled={isMutating || !selectedItems.some((i) => i.canReject)}
-                      onClick={() => requestDecision(selectedItems, 'reject')}
-                    >
-                      Bulk Reject
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      disabled={isMutating || !selectedItems.some((i) => i.canApprove)}
-                      onClick={() => requestDecision(selectedItems, 'approve')}
-                    >
-                      Bulk Approve
-                    </Button>
+                <div className="pt-2 border-t border-[var(--border)] space-y-2">
+                  {hasSensitiveSelected && (
+                    <div className="text-[12px] text-[var(--warning)] bg-[var(--warning)]/10 border border-[var(--warning)]/30 rounded-[var(--radius-control)] p-2.5 flex items-start gap-2">
+                      <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>
+                        Sensitive items (access, budget, approvals, email allowlist) require individual 6-digit MFA confirmation and cannot be approved in bulk. Please handle them individually.
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[13px] font-medium text-[var(--text)]">
+                      {selectedItems.length} selected
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() =>
+                          markReadState(
+                            selectedItems.map((i) => i.id),
+                            true,
+                          )
+                        }
+                      >
+                        Mark Read
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        disabled={
+                          isMutating ||
+                          hasSensitiveSelected ||
+                          !selectedItems.some((i) => i.canReject)
+                        }
+                        onClick={() =>
+                          void executeBulkDecisionForNonSensitive(selectedItems, 'reject')
+                        }
+                      >
+                        Bulk Reject
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        disabled={
+                          isMutating ||
+                          hasSensitiveSelected ||
+                          !selectedItems.some((i) => i.canApprove)
+                        }
+                        onClick={() =>
+                          void executeBulkDecisionForNonSensitive(selectedItems, 'approve')
+                        }
+                      >
+                        Bulk Approve
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -570,7 +663,7 @@ export function UnifiedInboxPage() {
                                   size="sm"
                                   variant="danger"
                                   disabled={isMutating}
-                                  onClick={() => requestDecision([item], 'reject')}
+                                  onClick={() => openMfaDecision(item, 'reject')}
                                 >
                                   <XCircle className="w-3.5 h-3.5 mr-1" /> Reject
                                 </Button>
@@ -580,7 +673,7 @@ export function UnifiedInboxPage() {
                                   size="sm"
                                   variant="primary"
                                   disabled={isMutating}
-                                  onClick={() => requestDecision([item], 'approve')}
+                                  onClick={() => openMfaDecision(item, 'approve')}
                                 >
                                   <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve
                                 </Button>
@@ -598,20 +691,21 @@ export function UnifiedInboxPage() {
         </div>
       )}
 
-      {pendingConfirm && (
-        <SecurityConfirmModal
-          isOpen={!!pendingConfirm}
-          onClose={() => setPendingConfirm(null)}
-          onConfirm={(_phrase, _pwd, mfaCode) =>
-            void executeDecisionForItems(pendingConfirm.items, pendingConfirm.decision, mfaCode)
-          }
+      {activeMfaItem && (
+        <MfaConfirmModal
+          isOpen={!!activeMfaItem}
+          onClose={() => setActiveMfaItem(null)}
+          onConfirm={async ({ mfaCode, reason }) => {
+            await handleMfaDecision(activeMfaItem.item, activeMfaItem.decision, mfaCode, reason)
+          }}
           isSubmitting={isMutating}
-          isCritical={pendingConfirm.items.some((i) => i.isCritical)}
-          severity={pendingConfirm.decision === 'reject' ? 'danger' : 'standard'}
-          title={`${pendingConfirm.decision === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'} (${pendingConfirm.items.length})`}
-          details={pendingConfirm.items.map((i) => i.title).slice(0, 3).join(', ')}
-          whatWillHappen={`Applies ${pendingConfirm.decision} to ${pendingConfirm.items.length} selected item(s) and writes an audit record.`}
-          confirmLabel={pendingConfirm.decision === 'approve' ? 'Approve Selected' : 'Reject Selected'}
+          isCritical={activeMfaItem.item.isCritical || activeMfaItem.decision === 'reject'}
+          title={`${activeMfaItem.decision === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}: ${activeMfaItem.item.title}`}
+          actionSummary={`${activeMfaItem.decision === 'approve' ? 'Approving' : 'Rejecting'} ${activeMfaItem.item.title}. This action takes effect immediately and writes an immutable audit event.`}
+          whoAffected={activeMfaItem.item.subtitle || activeMfaItem.item.requesterName}
+          requiresReason={true}
+          initialReason={reasonDrafts[activeMfaItem.item.id] || ''}
+          confirmLabel={activeMfaItem.decision === 'approve' ? 'Approve & Apply' : 'Confirm Rejection'}
         />
       )}
     </div>

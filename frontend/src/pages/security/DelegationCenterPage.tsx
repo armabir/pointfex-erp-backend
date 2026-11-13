@@ -37,9 +37,12 @@ export function DelegationCenterPage() {
   const { data, currentUser, showToast, refreshPermissions } = useApp()
   const { can, canAny } = usePermissions()
 
-  const canCreate = canAny(['delegations:create', 'permissions:delegate'])
+  const isCeo =
+    currentUser?.role === 'system:root' ||
+    Boolean((currentUser as any)?.roles?.includes('system:root'))
+  const canCreate = isCeo || canAny(['delegations:create', 'permissions:delegate'])
   const canApprove = can('delegations:approve')
-  const canReadOrg = canAny(['delegations:read_all', 'permissions:read', 'audit_logs:read'])
+  const canReadOrg = isCeo || canAny(['delegations:read_all', 'permissions:read', 'audit_logs:read'])
 
   const [created, setCreated] = useState<any[]>([])
   const [received, setReceived] = useState<any[]>([])
@@ -522,7 +525,7 @@ export function DelegationCenterPage() {
                   description="Temporary authority delegated to you by teammates will appear here."
                 />
               ) : (
-                received.map((d) => renderDelegationCard(d, can('delegations:revoke'), false))
+                received.map((d) => renderDelegationCard(d, isCeo, false))
               )}
             </div>
           </Card>
@@ -542,10 +545,10 @@ export function DelegationCenterPage() {
         </div>
       )}
 
-      {allDelegations.length > 0 && (
-        <Card title={`Organization Delegation Ledger (${allDelegations.length})`}>
+      {isCeo && allDelegations.length > 0 && (
+        <Card title={`Organization Delegation Ledger (CEO Full Scope) (${allDelegations.length})`}>
           <div className="space-y-2.5">
-            {allDelegations.map((d) => renderDelegationCard(d, can('delegations:revoke'), canApprove))}
+            {allDelegations.map((d) => renderDelegationCard(d, true, canApprove))}
           </div>
         </Card>
       )}

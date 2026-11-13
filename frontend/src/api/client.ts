@@ -308,15 +308,33 @@ export const erpApi = {
     apiRequest<any>('/finance/allocate-project', { method: 'POST', body: JSON.stringify(body) }),
   requestBudgetIncrease: (body: Record<string, unknown>) =>
     apiRequest<any>('/finance/request-budget', { method: 'POST', body: JSON.stringify(body) }),
-  approveBudgetRequest: (requestId: string, body: { approvedAmount: number; feedback?: string }) =>
+  approveBudgetRequest: (
+    requestId: string,
+    body: { approvedAmount: number; feedback?: string },
+    mfaCode?: string,
+  ) =>
     apiRequest<any>(`/finance/approve-budget/${requestId}`, {
       method: 'POST',
+      headers: mfaCode
+        ? {
+            'X-MFA-Code': mfaCode,
+            'X-MFA-Action': 'treasury:transfer',
+            'X-MFA-Target': requestId,
+          }
+        : undefined,
       body: JSON.stringify(body),
     }),
-  rejectBudgetRequest: (requestId: string, feedback: string) =>
+  rejectBudgetRequest: (requestId: string, feedback: string, mfaCode?: string) =>
     apiRequest<any>(`/finance/reject-budget/${requestId}`, {
       method: 'POST',
-      body: JSON.stringify({ feedback }),
+      headers: mfaCode
+        ? {
+            'X-MFA-Code': mfaCode,
+            'X-MFA-Action': 'budgets:reject_request',
+            'X-MFA-Target': requestId,
+          }
+        : undefined,
+      body: JSON.stringify({ feedback, reason: feedback }),
     }),
   issueFinancialAdjustment: (body: {
     userId: string
@@ -418,6 +436,7 @@ export const erpApi = {
     permissionCodes?: string[]
     wildcards?: string[]
     includeCritical?: boolean
+    tier?: string
   }) => apiRequest<any>('/rbac/roles', { method: 'POST', body: JSON.stringify(body) }),
   cloneRole: (id: string, body: { name: string; slug?: string; description?: string }) =>
     apiRequest<any>(`/rbac/roles/${id}/clone`, { method: 'POST', body: JSON.stringify(body) }),
@@ -431,7 +450,7 @@ export const erpApi = {
       method: 'PATCH',
       body: JSON.stringify(reason ? { reason } : {}),
     }),
-  updateRole: (id: string, body: { name?: string; description?: string; isActive?: boolean; wildcards?: string[] }) =>
+  updateRole: (id: string, body: { name?: string; description?: string; isActive?: boolean; wildcards?: string[]; tier?: string }) =>
     apiRequest<any>(`/rbac/roles/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteRole: (id: string, passwordConfirm?: string) =>
     apiRequest<any>(`/rbac/roles/${id}`, {
@@ -547,15 +566,29 @@ export const erpApi = {
     reason?: string
     mode?: string
   }) => apiRequest<any>('/rbac/approvals', { method: 'POST', body: JSON.stringify(body) }),
-  approveWorkflowStep: (id: string, notes?: string) =>
+  approveWorkflowStep: (id: string, notes?: string, mfaCode?: string) =>
     apiRequest<any>(`/rbac/approvals/${id}/approve`, {
       method: 'POST',
-      body: JSON.stringify(notes ? { notes } : {}),
+      headers: mfaCode
+        ? {
+            'X-MFA-Code': mfaCode,
+            'X-MFA-Action': 'approvals:decide',
+            'X-MFA-Target': id,
+          }
+        : undefined,
+      body: JSON.stringify(notes ? { notes, reason: notes } : {}),
     }),
-  rejectWorkflowStep: (id: string, notes?: string) =>
+  rejectWorkflowStep: (id: string, notes?: string, mfaCode?: string) =>
     apiRequest<any>(`/rbac/approvals/${id}/reject`, {
       method: 'POST',
-      body: JSON.stringify(notes ? { notes } : {}),
+      headers: mfaCode
+        ? {
+            'X-MFA-Code': mfaCode,
+            'X-MFA-Action': 'approvals:decide',
+            'X-MFA-Target': id,
+          }
+        : undefined,
+      body: JSON.stringify(notes ? { notes, reason: notes } : {}),
     }),
   // Audit Chain & Security Sessions
   verifyAuditChain: () =>
@@ -643,16 +676,42 @@ export const erpApi = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  approveAccessRequest: (requestId: string, reviewNotes?: string) =>
-    apiRequest<any>(`/governance/access-requests/${requestId}/approve`, {
+  approveAccessRequest: (
+    requestId: string,
+    opts?: string | { reviewNotes?: string; reason?: string; mfaCode?: string },
+  ) => {
+    const reason = typeof opts === 'string' ? opts : opts?.reason || opts?.reviewNotes
+    const mfaCode = typeof opts === 'object' ? opts?.mfaCode : undefined
+    return apiRequest<any>(`/governance/access-requests/${requestId}/approve`, {
       method: 'POST',
-      body: JSON.stringify(reviewNotes ? { reviewNotes } : {}),
-    }),
-  rejectAccessRequest: (requestId: string, reviewNotes?: string) =>
-    apiRequest<any>(`/governance/access-requests/${requestId}/reject`, {
+      headers: mfaCode
+        ? {
+            'X-MFA-Code': mfaCode,
+            'X-MFA-Action': 'governance:approve_request',
+            'X-MFA-Target': requestId,
+          }
+        : undefined,
+      body: JSON.stringify(reason ? { reason, reviewNotes: reason } : {}),
+    })
+  },
+  rejectAccessRequest: (
+    requestId: string,
+    opts?: string | { reviewNotes?: string; reason?: string; mfaCode?: string },
+  ) => {
+    const reason = typeof opts === 'string' ? opts : opts?.reason || opts?.reviewNotes
+    const mfaCode = typeof opts === 'object' ? opts?.mfaCode : undefined
+    return apiRequest<any>(`/governance/access-requests/${requestId}/reject`, {
       method: 'POST',
-      body: JSON.stringify(reviewNotes ? { reviewNotes } : {}),
-    }),
+      headers: mfaCode
+        ? {
+            'X-MFA-Code': mfaCode,
+            'X-MFA-Action': 'governance:approve_request',
+            'X-MFA-Target': requestId,
+          }
+        : undefined,
+      body: JSON.stringify(reason ? { reason, reviewNotes: reason } : {}),
+    })
+  },
 
   // Phase 4B: Fresh MFA & Employee Lifecycle Controls
   mfaHeaders: (mfaCode: string, actionKey?: string, targetId?: string) => ({
@@ -796,8 +855,6 @@ export const erpApi = {
     }>('/auth/me/sessions'),
   revokeMySession: (id: string) =>
     apiRequest<{ revoked: boolean }>(`/auth/me/sessions/${id}`, { method: 'DELETE' }),
-  unlinkGoogleIdentity: () =>
-    apiRequest<{ unlinked: boolean }>('/auth/google/unlink', { method: 'POST' }),
   listLoginAllowlist: () =>
     apiRequest<{
       allowlistRequired: boolean
@@ -939,4 +996,137 @@ export const erpApi = {
       },
       body: JSON.stringify({ reason }),
     }),
+
+  // Phase 3 & 4: Tiers, CEO Direct Identity & Session Hardening
+  logoutAllDevices: () =>
+    apiRequest<{ loggedOut: boolean; revokedCount: number }>('/auth/me/sessions/logout-all', {
+      method: 'POST',
+    }),
+  updateUserIdentity: (
+    id: string,
+    body: { fullName: string; email: string; reason: string },
+    mfaCode: string,
+  ) =>
+    apiRequest<any>(`/employees/${id}/identity`, {
+      method: 'PATCH',
+      headers: {
+        'X-MFA-Code': mfaCode,
+        'X-MFA-Action': 'users:edit_identity',
+        'X-MFA-Target': id,
+      },
+      body: JSON.stringify(body),
+    }),
+  setRoleTier: (roleId: string, tier: string, mfaCode: string, reason: string) =>
+    apiRequest<any>(`/rbac/roles/${roleId}/tier`, {
+      method: 'PATCH',
+      headers: {
+        'X-MFA-Code': mfaCode,
+        'X-MFA-Action': 'rbac:manage_roles',
+        'X-MFA-Target': roleId,
+      },
+      body: JSON.stringify({ tier, reason }),
+    }),
+
+  // Phase 5: Access History
+  getAccessHistory: (params?: {
+    page?: number
+    limit?: number
+    actorId?: string
+    targetEmployeeId?: string
+    changeType?: string
+    from?: string
+    to?: string
+  }) => {
+    const qs = params ? '?' + new URLSearchParams(params as any).toString() : ''
+    return apiRequest<{
+      items: any[]
+      total: number
+      page: number
+      limit: number
+      totalPages: number
+    }>(`/rbac/access-history${qs}`)
+  },
+  exportAccessHistory: (format: 'json' | 'csv' = 'json') =>
+    apiRequest<any>(`/rbac/access-history/export?format=${format}`),
+
+  // Phase 7: Projects, Votes, Budgets, Proposals
+  createProjectCreationRequest: (body: any, mfaCode?: string) =>
+    apiRequest<any>('/projects/requests', {
+      method: 'POST',
+      headers: mfaCode
+        ? {
+            'X-MFA-Code': mfaCode,
+            'X-MFA-Action': 'projects:request',
+            'X-MFA-Target': 'new',
+          }
+        : undefined,
+      body: JSON.stringify(body),
+    }),
+  listProjectCreationRequests: (params?: { status?: string }) => {
+    const qs = params?.status ? `?status=${params.status}` : ''
+    return apiRequest<any[]>(`/projects/requests${qs}`)
+  },
+  getProjectCreationRequest: (id: string) =>
+    apiRequest<any>(`/projects/requests/${id}`),
+  castVoteOnProjectRequest: (
+    id: string,
+    body: { choice: 'APPROVE' | 'REJECT'; reason?: string },
+    mfaCode?: string,
+  ) =>
+    apiRequest<any>(`/projects/requests/${id}/vote`, {
+      method: 'POST',
+      headers: mfaCode
+        ? {
+            'X-MFA-Code': mfaCode,
+            'X-MFA-Action': 'votes:cast',
+            'X-MFA-Target': id,
+          }
+        : undefined,
+      body: JSON.stringify(body),
+    }),
+  decideProjectCreationRequest: (
+    id: string,
+    body: { decision: 'APPROVE' | 'REJECT'; reason: string },
+    mfaCode: string,
+  ) =>
+    apiRequest<any>(`/projects/requests/${id}/decide`, {
+      method: 'POST',
+      headers: {
+        'X-MFA-Code': mfaCode,
+        'X-MFA-Action': 'projects:create',
+        'X-MFA-Target': id,
+      },
+      body: JSON.stringify(body),
+    }),
+  createProjectProposal: (body: {
+    title: string
+    problemStatement: string
+    proposedSolution: string
+    targetManagerId: string
+    expectedBenefits?: string
+    isConfidentialGrievance?: boolean
+    category?: string
+  }) =>
+    apiRequest<any>('/projects/proposals', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  listProjectProposals: (params?: { role?: 'requester' | 'reviewer' }) => {
+    const qs = params?.role ? `?role=${params.role}` : ''
+    return apiRequest<any[]>(`/projects/proposals${qs}`)
+  },
+  reviewProjectProposal: (
+    id: string,
+    body: {
+      action: 'FORWARD' | 'RETURN' | 'DECLINE'
+      reviewNotes: string
+      initialBudget?: number
+    },
+  ) =>
+    apiRequest<any>(`/projects/proposals/${id}/review`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  getMyRequestsTimeline: () =>
+    apiRequest<any[]>('/projects/my-requests'),
 }

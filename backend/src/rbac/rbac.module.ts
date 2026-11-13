@@ -4,6 +4,7 @@ import { UsersLifecycleController } from './users-lifecycle.controller'
 import { DelegationsController } from './delegations.controller'
 import { ApprovalsController } from './approvals.controller'
 import { SecurityControlsController } from './security-controls.controller'
+import { AccessHistoryController } from './access-history.controller'
 import { RbacService } from './rbac.service'
 import { EmployeeAccessService } from './employee-access.service'
 import { EmployeeLifecycleService } from './employee-lifecycle.service'
@@ -23,6 +24,7 @@ import { SecurityControlsService } from './security-controls.service'
     DelegationsController,
     ApprovalsController,
     SecurityControlsController,
+    AccessHistoryController,
   ],
   providers: [
     RbacService,

@@ -634,6 +634,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     void erpApi.logoutSession().catch(() => undefined)
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const channel = new BroadcastChannel('pointfex-auth')
+        channel.postMessage({ type: 'LOGOUT' })
+        channel.close()
+      }
+    } catch {}
     setAuthUser(null)
     setRolePermissions([])
     setMyPermissions([])
@@ -644,6 +651,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
       window.history.replaceState(null, '', '/login')
     }
     showToast('Signed out of Pointfex ERP', 'info')
+  }, [showToast])
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return
+    const channel = new BroadcastChannel('pointfex-auth')
+    channel.onmessage = (event) => {
+      if (event.data?.type === 'LOGOUT') {
+        setAuthUser(null)
+        setRolePermissions([])
+        setMyPermissions([])
+        myPermissionsRef.current = []
+        setDirectPermissions([])
+        setAuthzSnapshot(null)
+        if (window.location.pathname !== '/login') {
+          window.history.replaceState(null, '', '/login')
+        }
+        showToast('Signed out from another window/tab.', 'info')
+      }
+    }
+    return () => {
+      channel.close()
+    }
   }, [showToast])
 
   const can = useCallback(

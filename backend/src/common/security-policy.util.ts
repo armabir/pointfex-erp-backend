@@ -235,7 +235,9 @@ export function assertTargetNotCeoForDestructiveAction(
   verb: string,
 ): void {
   if (isEmployeeCeo(targetEmployee)) {
-    throw new BadRequestException(`Security law: Cannot ${verb} the CEO executive account.`)
+    throw new ForbiddenException(
+      'Security law: The system:root CEO holder cannot be removed, edited, delegated or suspended through the app.',
+    )
   }
 }
 

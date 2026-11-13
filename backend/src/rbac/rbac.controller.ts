@@ -10,11 +10,14 @@ import {
   Headers,
   Query,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common'
 import { RbacService } from './rbac.service'
 import { EmployeeAccessService } from './employee-access.service'
 import { CeoBootstrapService } from './ceo-bootstrap.service'
 import { AuthorizationService } from './authorization.service'
+import { PrismaService } from '../common/prisma.service'
+import { getEmployeeEffectiveTier, RoleTier } from '../common/tier.util'
 import { AuthorizationScope } from '@prisma/client'
 import { AuthenticatedUser } from '../common/auth-user.interface'
 import { PermissionsGuard } from '../common/permissions.guard'
@@ -42,6 +45,7 @@ export class RbacController {
     private readonly employeeAccessService: EmployeeAccessService,
     private readonly ceoBootstrapService: CeoBootstrapService,
     private readonly authzService: AuthorizationService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Get('me/effective')
@@ -146,6 +150,17 @@ export class RbacController {
     @CurrentUser() actor: AuthenticatedUser,
   ) {
     return this.rbacService.setRoleActiveState(id, false, actor, dto?.reason)
+  }
+
+  @Patch('roles/:id/tier')
+  @RequireAnyPermission('roles:update', 'system:root')
+  @RequiresFreshMfa('roles:update')
+  setRoleTier(
+    @Param('id') id: string,
+    @Body() body: { tier: string; changeReason?: string },
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.rbacService.setRoleTier(id, body.tier, actor, body.changeReason)
   }
 
   @Get('users/:employeeId/role-assignments')
@@ -269,8 +284,58 @@ export class RbacController {
 
   @Get('users/:employeeId/effective')
   @RequireAnyPermission('permissions:read', 'users:assign_role', 'audit_logs:read')
-  getEffectiveForUser(@Param('employeeId') employeeId: string) {
-    return this.authzService.resolveEffectiveAuthz(employeeId)
+  async getEffectiveForUser(
+    @Param('employeeId') employeeId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    if (actor.id === employeeId) {
+      return this.authzService.resolveEffectiveAuthz(employeeId)
+    }
+
+    const isCeo = actor.roles?.includes('system:root') || (actor.role || '').toLowerCase() === 'ceo'
+    if (isCeo) {
+      return this.authzService.resolveEffectiveAuthz(employeeId)
+    }
+
+    const actorTier = await getEmployeeEffectiveTier(this.prisma, actor.id)
+    const targetTier = await getEmployeeEffectiveTier(this.prisma, employeeId)
+
+    if (actorTier === RoleTier.EXECUTIVE) {
+      if (targetTier === RoleTier.EXECUTIVE || targetTier === RoleTier.CEO) {
+        throw new ForbiddenException(
+          'Executives cannot view access details for Executive or CEO accounts.',
+        )
+      }
+      return this.authzService.resolveEffectiveAuthz(employeeId)
+    }
+
+    if (actorTier === RoleTier.MANAGER) {
+      if (targetTier !== RoleTier.STAFF) {
+        throw new ForbiddenException(
+          'Managers can only view access details for developers in their squads.',
+        )
+      }
+      const sharedTeam = await this.prisma.teamMembership.findFirst({
+        where: {
+          employeeId,
+          isActive: true,
+          team: {
+            OR: [
+              { memberships: { some: { employeeId: actor.id, isActive: true } } },
+              { pmPosition: { assignments: { some: { employeeId: actor.id, isActive: true } } } },
+            ],
+          },
+        },
+      })
+      if (!sharedTeam) {
+        throw new ForbiddenException(
+          'Managers can only view access details for developers in their assigned squads.',
+        )
+      }
+      return this.authzService.resolveEffectiveAuthz(employeeId)
+    }
+
+    throw new ForbiddenException('Developers can only view their own access details.')
   }
 
   @Post('users/:employeeId/denials')

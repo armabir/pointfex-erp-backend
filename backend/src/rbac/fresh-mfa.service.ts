@@ -41,7 +41,7 @@ export class FreshMfaService {
       return { valid: false, matchedStep: null }
     }
     const baseStep = Math.floor(Date.now() / 1000 / 30)
-    for (const offset of [-2, -1, 0, 1, 2]) {
+    for (const offset of [-1, 0, 1]) {
       if (generateTotpCode(secretHex, offset) === normalized) {
         return { valid: true, matchedStep: baseStep + offset }
       }
@@ -83,7 +83,7 @@ export class FreshMfaService {
       throw new ForbiddenException({
         code: 'MFA_ENROLLMENT_REQUIRED',
         actionKey: ctx.actionKey,
-        message: 'Enable MFA to do this sensitive action.',
+        message: 'MFA is not enabled on your account. Please set up two-factor authentication in My Account before proceeding.',
       })
     }
 
@@ -99,18 +99,28 @@ export class FreshMfaService {
         outcome: 'LOCKED',
         mfaVerified: false,
       })
+      const unlockTimeStr = actor.mfaLockedUntil.toISOString()
       throw new ForbiddenException({
         code: 'MFA_LOCKED',
-        lockedUntil: actor.mfaLockedUntil.toISOString(),
+        lockedUntil: unlockTimeStr,
         message:
-          'Sensitive actions are temporarily locked for 15 minutes after 5 failed MFA attempts.',
+          `Sensitive actions are temporarily locked until ${unlockTimeStr}.`,
       })
     }
 
     // Enforce action + target binding if client passed explicit binding headers
-    if (ctx.boundActionHeader && ctx.boundActionHeader !== ctx.actionKey) {
+    const isActionMatch = (expected: string, provided: string) => {
+      if (expected === provided) return true
+      if (expected === 'approvals:decide' && ['approvals:approve', 'approvals:reject', 'approvals:decide'].includes(provided)) return true
+      if (['approvals:approve', 'approvals:reject'].includes(expected) && provided === 'approvals:decide') return true
+      if (expected === 'governance:approve_request' && ['governance:approve_request', 'governance:reject_request', 'governance:access_request'].includes(provided)) return true
+      if (expected === 'treasury:transfer' && ['budgets:approve_request', 'treasury:transfer'].includes(provided)) return true
+      return false
+    }
+
+    if (ctx.boundActionHeader && !isActionMatch(ctx.actionKey, ctx.boundActionHeader)) {
       throw new ForbiddenException(
-        `MFA code binding mismatch: expected "${ctx.actionKey}", received "${ctx.boundActionHeader}".`,
+        `MFA code action mismatch: expected "${ctx.actionKey}", received "${ctx.boundActionHeader}".`,
       )
     }
     if (ctx.boundTargetHeader && ctx.boundTargetHeader !== ctx.targetId) {
@@ -163,7 +173,7 @@ export class FreshMfaService {
       throw new ForbiddenException({
         code: 'MFA_CODE_REPLAYED',
         message:
-          'This authenticator code was already used. Wait for the next 30-second code and try again.',
+          'That code was already used. Wait for the next one.',
       })
     }
 
@@ -179,7 +189,7 @@ export class FreshMfaService {
       throw new ForbiddenException({
         code: 'MFA_CODE_REPLAYED',
         message:
-          'This authenticator code was already bound to another action. Wait for the next code.',
+          'That code was already used. Wait for the next one.',
       })
     }
 
@@ -272,12 +282,12 @@ export class FreshMfaService {
 
     if (shouldLock) {
       await this.notifyAdminsOfMfaLockout(actor, ctx.actionKey)
+      const lockIso = lockedUntil!.toISOString()
       throw new ForbiddenException({
         code: 'MFA_LOCKED',
         attemptsRemaining: 0,
-        lockedUntil: lockedUntil!.toISOString(),
-        message:
-          'Too many failed MFA attempts (5 in 15 minutes). Sensitive actions are locked for 15 minutes.',
+        lockedUntil: lockIso,
+        message: `Too many failed MFA attempts. Sensitive actions are temporarily locked until ${lockIso}.`,
       })
     }
 
@@ -285,7 +295,7 @@ export class FreshMfaService {
     throw new ForbiddenException({
       code: 'INVALID_MFA_CODE',
       attemptsRemaining,
-      message: `Invalid 6-digit MFA code. ${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} remaining before 15-minute lockout.`,
+      message: `Invalid 6-digit MFA code. ${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} remaining before lockout.`,
     })
   }
 

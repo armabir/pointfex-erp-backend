@@ -53,10 +53,14 @@ export class AuthController {
     return this.authService.revokeMySession(actor, id)
   }
 
-  @Post('google/unlink')
+  @Post('me/sessions/logout-all')
   @HttpCode(HttpStatus.OK)
-  unlinkGoogle(@CurrentUser() actor: AuthenticatedUser) {
-    return this.authService.unlinkGoogleIdentity(actor)
+  logoutAll(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.authService.logoutAllDevices(actor, request, response)
   }
 
   @Post('change-password')

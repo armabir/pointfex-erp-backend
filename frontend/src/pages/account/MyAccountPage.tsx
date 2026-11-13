@@ -1,14 +1,16 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   KeyRound,
   Laptop,
   Link2,
   Lock,
+  LogOut,
   Palette,
   ShieldCheck,
   Trash2,
-  Unlink,
   User as UserIcon,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react'
 import { erpApi } from '../../api/client'
 import { useApp } from '../../context/AppContext'
@@ -18,6 +20,7 @@ import { Button } from '../../components/common/Button'
 import { Badge } from '../../components/common/Badge'
 import { MfaRecoveryCodesCard } from '../../components/common/MfaRecoveryCodesCard'
 import { AdditionalGrantedAccessCard } from '../../components/common/AdditionalGrantedAccessCard'
+import { validatePasswordStrength } from '../../utils/password-policy'
 
 function formatDhakaDateTime(iso?: string | null): string {
   if (!iso) return 'Never'
@@ -29,7 +32,7 @@ function formatDhakaDateTime(iso?: string | null): string {
 }
 
 export function MyAccountPage() {
-  const { currentUser, theme, toggleTheme, showToast, updateUser, refreshData } = useApp()
+  const { currentUser, theme, toggleTheme, showToast, updateUser, refreshData, logout } = useApp()
 
   const [bio, setBio] = useState(currentUser?.bio || '')
   const [timezone, setTimezone] = useState(currentUser?.timezone || 'Asia/Dhaka (UTC+6)')
@@ -104,10 +107,19 @@ export function MyAccountPage() {
     }
   }
 
+  const pwdStrength = useMemo(
+    () =>
+      validatePasswordStrength(newPassword, {
+        name: currentUser?.name,
+        email: currentUser?.email,
+      }),
+    [newPassword, currentUser?.name, currentUser?.email],
+  )
+
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (newPassword.length < 12) {
-      showToast('New password must be at least 12 characters.', 'error')
+    if (!pwdStrength.valid) {
+      showToast(pwdStrength.errors[0] || 'Password does not meet policy requirements.', 'error')
       return
     }
     setChangingPassword(true)
@@ -116,11 +128,27 @@ export function MyAccountPage() {
       setCurrentPassword('')
       setNewPassword('')
       setPasswordMfaCode('')
-      showToast('Password updated successfully.', 'success')
+      showToast(
+        'Password updated successfully. All other active sessions have been revoked.',
+        'success',
+      )
+      await loadAccountSecurity()
     } catch (err: any) {
       showToast(err?.message || 'Unable to update password.', 'error')
     } finally {
       setChangingPassword(false)
+    }
+  }
+
+  const handleLogoutAllDevices = async () => {
+    try {
+      const res = await erpApi.logoutAllDevices()
+      showToast(`Logged out of ${res.revokedCount} devices. Redirecting to sign in...`, 'info')
+      window.setTimeout(() => {
+        void logout()
+      }, 700)
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to logout from all devices.', 'error')
     }
   }
 
@@ -131,16 +159,6 @@ export function MyAccountPage() {
       await loadAccountSecurity()
     } catch (err: any) {
       showToast(err?.message || 'Unable to revoke session.', 'error')
-    }
-  }
-
-  const handleUnlinkGoogle = async () => {
-    try {
-      await erpApi.unlinkGoogleIdentity()
-      showToast('Google account unlinked.', 'info')
-      await loadAccountSecurity()
-    } catch (err: any) {
-      showToast(err?.message || 'Unable to unlink Google account.', 'error')
     }
   }
 
@@ -246,39 +264,102 @@ export function MyAccountPage() {
           <Lock className="w-4 h-4 text-[var(--primary)]" />
           Change Password
         </h2>
-        <form onSubmit={handleChangePassword} className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-          <input
-            type="password"
-            required
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            placeholder="Current password"
-            className="px-3 py-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--text)]"
-          />
-          <input
-            type="password"
-            required
-            minLength={12}
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            placeholder="New password (min 12 chars)"
-            className="px-3 py-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--text)]"
-          />
-          {mfaEnabled ? (
+        <form onSubmit={handleChangePassword} className="space-y-3 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <input
-              type="text"
+              type="password"
               required
-              maxLength={6}
-              value={passwordMfaCode}
-              onChange={(e) => setPasswordMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="6-digit MFA code"
-              className="px-3 py-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--text)] font-mono"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              placeholder="Current password"
+              className="px-3 py-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--text)]"
             />
-          ) : (
-            <div />
+            <input
+              type="password"
+              required
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="New password"
+              className="px-3 py-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--text)]"
+            />
+            {mfaEnabled ? (
+              <input
+                type="text"
+                required
+                maxLength={6}
+                value={passwordMfaCode}
+                onChange={(e) => setPasswordMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="6-digit MFA code"
+                className="px-3 py-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-[var(--text)] font-mono"
+              />
+            ) : (
+              <div />
+            )}
+          </div>
+
+          {/* Live Password Strength Meter */}
+          {newPassword.length > 0 && (
+            <div className="p-3 rounded-xl bg-[var(--bg)] border border-[var(--border)] space-y-2">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-semibold text-[var(--text)]">Password Policy Strength</span>
+                <span
+                  className={`font-bold ${
+                    pwdStrength.valid
+                      ? 'text-emerald-500'
+                      : pwdStrength.score >= 2
+                        ? 'text-amber-500'
+                        : 'text-rose-500'
+                  }`}
+                >
+                  {pwdStrength.valid
+                    ? 'STRONG (Complies with Policy)'
+                    : pwdStrength.score >= 2
+                      ? 'MODERATE'
+                      : 'WEAK'}
+                </span>
+              </div>
+              <div className="w-full h-1.5 rounded-full bg-[var(--surface-muted)] overflow-hidden flex">
+                <div
+                  className={`h-full transition-all ${
+                    pwdStrength.valid
+                      ? 'bg-emerald-500 w-full'
+                      : pwdStrength.score === 3
+                        ? 'bg-amber-400 w-3/4'
+                        : pwdStrength.score === 2
+                          ? 'bg-amber-500 w-1/2'
+                          : 'bg-rose-500 w-1/4'
+                  }`}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px] pt-1">
+                <div className={`flex items-center gap-1.5 ${pwdStrength.rules.minLength ? 'text-emerald-600 dark:text-emerald-400' : 'text-[var(--muted)]'}`}>
+                  {pwdStrength.rules.minLength ? <CheckCircle2 className="w-3 h-3 shrink-0" /> : <XCircle className="w-3 h-3 shrink-0" />}
+                  <span>8 to 128 characters</span>
+                </div>
+                <div className={`flex items-center gap-1.5 ${pwdStrength.rules.hasUpper && pwdStrength.rules.hasLower ? 'text-emerald-600 dark:text-emerald-400' : 'text-[var(--muted)]'}`}>
+                  {pwdStrength.rules.hasUpper && pwdStrength.rules.hasLower ? <CheckCircle2 className="w-3 h-3 shrink-0" /> : <XCircle className="w-3 h-3 shrink-0" />}
+                  <span>Uppercase &amp; lowercase letters</span>
+                </div>
+                <div className={`flex items-center gap-1.5 ${pwdStrength.rules.hasNumber && pwdStrength.rules.hasSymbol ? 'text-emerald-600 dark:text-emerald-400' : 'text-[var(--muted)]'}`}>
+                  {pwdStrength.rules.hasNumber && pwdStrength.rules.hasSymbol ? <CheckCircle2 className="w-3 h-3 shrink-0" /> : <XCircle className="w-3 h-3 shrink-0" />}
+                  <span>Numbers &amp; special characters</span>
+                </div>
+                <div className={`flex items-center gap-1.5 ${pwdStrength.rules.notCommon && pwdStrength.rules.noNameOrEmail ? 'text-emerald-600 dark:text-emerald-400' : 'text-[var(--muted)]'}`}>
+                  {pwdStrength.rules.notCommon && pwdStrength.rules.noNameOrEmail ? <CheckCircle2 className="w-3 h-3 shrink-0" /> : <XCircle className="w-3 h-3 shrink-0" />}
+                  <span>Not common &amp; no name/email</span>
+                </div>
+              </div>
+            </div>
           )}
-          <div className="sm:col-span-3">
-            <Button type="submit" size="sm" variant="secondary" disabled={changingPassword}>
+
+          <div>
+            <Button
+              type="submit"
+              size="sm"
+              variant="secondary"
+              disabled={changingPassword || (newPassword.length > 0 && !pwdStrength.valid)}
+            >
               {changingPassword ? 'Updating...' : 'Update password'}
             </Button>
           </div>
@@ -294,27 +375,20 @@ export function MyAccountPage() {
           </h2>
           {googleLink ? (
             <div className="space-y-3 text-xs">
-              <div className="p-3 rounded-lg bg-[var(--bg)] border border-[var(--border)] space-y-1">
-                <div className="font-medium text-[var(--text)]">{googleLink.email}</div>
-                <div className="text-[var(--muted)]">
+              <div className="p-3 rounded-lg bg-[var(--bg)] border border-[var(--border)] space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-[var(--text)]">{googleLink.email}</span>
+                  <Badge variant="success" size="xs">
+                    Google Account Linked
+                  </Badge>
+                </div>
+                <div className="text-[11px] text-[var(--muted)]">
                   Last sign-in: {formatDhakaDateTime(googleLink.lastLoginAt)}
                 </div>
               </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="danger"
-                icon={Unlink}
-                disabled={!sessionsData?.hasPassword}
-                onClick={() => void handleUnlinkGoogle()}
-              >
-                Unlink Google
-              </Button>
-              {!sessionsData?.hasPassword && (
-                <p className="text-[11px] text-[var(--muted)]">
-                  Set a local password above before unlinking Google.
-                </p>
-              )}
+              <p className="text-[11px] text-[var(--muted)]">
+                To change your linked email, contact the Chief Executive Officer.
+              </p>
             </div>
           ) : (
             <div className="space-y-3 text-xs">
@@ -388,10 +462,21 @@ export function MyAccountPage() {
 
       {/* Active Sessions */}
       <Card className="p-5 space-y-3">
-        <h2 className="text-sm font-semibold text-[var(--text)] flex items-center gap-2">
-          <Laptop className="w-4 h-4 text-[var(--primary)]" />
-          Active Sessions
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-[var(--text)] flex items-center gap-2">
+            <Laptop className="w-4 h-4 text-[var(--primary)]" />
+            Active Sessions
+          </h2>
+          <Button
+            type="button"
+            size="xs"
+            variant="danger"
+            icon={LogOut}
+            onClick={() => void handleLogoutAllDevices()}
+          >
+            Log out of all devices
+          </Button>
+        </div>
         <div className="divide-y divide-[var(--border)] border border-[var(--border)] rounded-xl overflow-hidden">
           {!sessionsData || sessionsData.sessions.length === 0 ? (
             <div className="p-4 text-xs text-[var(--muted)] text-center">No active sessions found.</div>

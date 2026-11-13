@@ -11,6 +11,13 @@ import { SecurityControlsService } from './security-controls.service'
 export class SecurityControlsController {
   constructor(private readonly securityControls: SecurityControlsService) {}
 
+  // --- Access History (CEO & Executives Only) ---
+  @Get('access-history')
+  @RequiresPermission('access_history:read')
+  listAccessHistory(@CurrentUser() actor: AuthenticatedUser) {
+    return this.securityControls.listAccessHistory(actor)
+  }
+
   // --- Sessions ---
   @Get('security-sessions/mine')
   @RequireAnyPermission('sessions:read', 'audit_logs:read')

@@ -50,7 +50,17 @@ export class CeoBootstrapService implements OnModuleInit {
    * - If more than one holder exists, deactivates duplicate holders while keeping the canonical CEO.
    */
   async ensureSingleRootCeo(): Promise<RootCeoInvariantResult> {
-    const canonicalCeoId = process.env.CEO_EMPLOYEE_ID?.trim() || 'emp_ceo_01'
+    const ceoEmailEnv = process.env.CEO_EMAIL?.trim().toLowerCase()
+    let canonicalCeoId = process.env.CEO_EMPLOYEE_ID?.trim() || 'emp_ceo_01'
+    if (ceoEmailEnv) {
+      const ceoByEmail = await this.prisma.employee.findUnique({
+        where: { email: ceoEmailEnv },
+        select: { id: true },
+      })
+      if (ceoByEmail) {
+        canonicalCeoId = ceoByEmail.id
+      }
+    }
     const now = new Date()
 
     const rootPermission = await this.prisma.permission.findUnique({
