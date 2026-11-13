@@ -9,7 +9,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://pointfex-backend.vercel.app/api/:path*"
+      "destination": "https://backend-erp-pointfex.vercel.app/api/:path*"
     },
     {
       "source": "/(.*)",

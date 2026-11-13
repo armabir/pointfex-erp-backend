@@ -2,10 +2,10 @@
 
 ## Production URLs
 
-- Frontend: `https://pointfex-frontend.vercel.app`
-- Backend: `https://pointfex-backend.vercel.app`
-- Health: `https://pointfex-backend.vercel.app/api/health`
-- Readiness: `https://pointfex-backend.vercel.app/api/ready`
+- Frontend: `https://erp-pointfex.vercel.app`
+- Backend: `https://backend-erp-pointfex.vercel.app`
+- Health: `https://backend-erp-pointfex.vercel.app/api/health`
+- Readiness: `https://backend-erp-pointfex.vercel.app/api/ready`
 
 Pushes to `main` run backend and frontend verification in GitHub Actions. Both Vercel
 production projects deploy only after every verification job succeeds. Runtime secrets
@@ -50,7 +50,11 @@ be committed.
    - Keep `DIRECT_URL` on the owner role for future `prisma migrate deploy` runs only.
 6. **Verify Resend & Google OAuth**:
    - Verify your sending domain in Resend and set `MAIL_FROM`.
-   - Add your production `https://.../api/auth/google/callback` redirect URI in Google Cloud Console.
+   - Set `CORS_ORIGIN` to `https://erp-pointfex.vercel.app`.
+   - Set `FRONTEND_URL` to `https://erp-pointfex.vercel.app`.
+   - Set backend `GOOGLE_REDIRECT_URI` to
+     `https://backend-erp-pointfex.vercel.app/api/auth/google/callback`.
+   - Add that exact same URL to Google Cloud Console under **Authorized redirect URIs**.
 7. **Enable default-deny allowlist LAST**:
    - Sign in as CEO -> **Admin & Governance > Login access** -> add initial allowed emails.
    - Set `LOGIN_ALLOWLIST_REQUIRED="true"` and restart backend.
