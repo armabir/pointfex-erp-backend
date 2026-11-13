@@ -356,12 +356,20 @@ function AppRoot() {
   const { isAuthenticated, isAuthChecking, mustChangePassword, mustEnrollMfa } = useApp()
 
   useEffect(() => {
-    if (!isAuthChecking && !isAuthenticated) {
-      if (
-        window.location.pathname !== '/login' &&
-        !window.location.pathname.startsWith('/reset-password')
-      ) {
-        window.history.replaceState(null, '', '/login' + window.location.search)
+    if (!isAuthChecking) {
+      if (!isAuthenticated) {
+        // Unauthenticated users visiting anything other than login/reset get hard-redirected to /login
+        if (
+          window.location.pathname !== '/login' &&
+          !window.location.pathname.startsWith('/reset-password')
+        ) {
+          window.location.replace('/login' + window.location.search)
+        }
+      } else {
+        // Authenticated users visiting the root URL (/) get redirected to their dashboard
+        if (window.location.pathname === '/') {
+          window.history.replaceState(null, '', '/dashboard')
+        }
       }
     }
   }, [isAuthChecking, isAuthenticated])
