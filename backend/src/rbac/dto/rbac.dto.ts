@@ -42,6 +42,10 @@ export class CreateRoleDto {
 
   @IsOptional()
   @IsString()
+  tier?: string
+
+  @IsOptional()
+  @IsString()
   changeReason?: string
 }
 
@@ -66,6 +70,10 @@ export class UpdateRoleDto {
   @IsOptional()
   @IsBoolean()
   includeCritical?: boolean
+
+  @IsOptional()
+  @IsString()
+  tier?: string
 
   @IsOptional()
   @IsString()
@@ -131,6 +139,10 @@ export class SetRolePermissionsDto {
   @IsOptional()
   @IsBoolean()
   includeCritical?: boolean
+
+  @IsOptional()
+  @IsString()
+  tier?: string
 
   @IsOptional()
   @IsString()

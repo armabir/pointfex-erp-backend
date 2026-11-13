@@ -15,7 +15,6 @@ import {
   X,
   Sparkles,
   UserCheck,
-  Crown,
   XCircle,
 } from 'lucide-react'
 import { erpApi } from '../../api/client'
@@ -98,13 +97,6 @@ type MatrixConfirmState =
     }
   | { kind: 'approve_request'; requestId: string; targetName: string; roleName: string }
   | { kind: 'reject_request'; requestId: string; targetName: string; roleName: string }
-  | {
-      kind: 'transfer_ceo'
-      successorId: string
-      successorName: string
-      fallbackSlug: string
-      reason?: string
-    }
 
 export function CeoRoleMatrixPage() {
   const { showToast, currentUser, refreshData } = useApp()
@@ -128,10 +120,6 @@ export function CeoRoleMatrixPage() {
   const [departmentFilter, setDepartmentFilter] = useState<'all' | CorporateDepartment>('all')
   const [userSearchQuery, setUserSearchQuery] = useState('')
 
-  // CEO Succession Transfer State
-  const [successorId, setSuccessorId] = useState('')
-  const [outgoingRoleSlug, setOutgoingRoleSlug] = useState('developer')
-  const [transferReason, setTransferReason] = useState('')
   const [matrixConfirm, setMatrixConfirm] = useState<MatrixConfirmState | null>(null)
   const [isConfirmSubmitting, setIsConfirmSubmitting] = useState(false)
 
@@ -140,6 +128,7 @@ export function CeoRoleMatrixPage() {
   const [newRoleName, setNewRoleName] = useState('')
   const [newRoleDesc, setNewRoleDesc] = useState('')
   const [newRolePresetId, setNewRolePresetId] = useState('')
+  const [newRoleTier, setNewRoleTier] = useState<string>('STAFF')
 
   // Assign Role Modal
   const [assignTargetUser, setAssignTargetUser] = useState<{
@@ -162,12 +151,18 @@ export function CeoRoleMatrixPage() {
     return { permRes, rolesRes, reqRes }
   }, [])
 
+  const HIDDEN_CEO_PERMISSIONS = useMemo(
+    () => new Set(['governance:transfer_ceo', 'governance:manage_succession']),
+    [],
+  )
+
   const loadRbacData = useCallback(
     async (preserveSelection = true) => {
       setIsLoading(true)
       try {
         const { permRes, rolesRes, reqRes } = await fetchRbacBundle()
-        setPermissions(permRes.permissions || [])
+        const rawPerms: PermissionItem[] = permRes.permissions || []
+        setPermissions(rawPerms.filter((p) => !HIDDEN_CEO_PERMISSIONS.has(p.code)))
         setRoles(rolesRes || [])
         setAccessRequests(reqRes || [])
         setDraftOverrides(null)
@@ -184,7 +179,7 @@ export function CeoRoleMatrixPage() {
         setIsLoading(false)
       }
     },
-    [fetchRbacBundle, showToast],
+    [fetchRbacBundle, showToast, HIDDEN_CEO_PERMISSIONS],
   )
 
   useEffect(() => {
@@ -192,7 +187,8 @@ export function CeoRoleMatrixPage() {
     fetchRbacBundle()
       .then(({ permRes, rolesRes, reqRes }) => {
         if (cancelled) return
-        setPermissions(permRes.permissions || [])
+        const rawPerms: PermissionItem[] = permRes.permissions || []
+        setPermissions(rawPerms.filter((p) => !HIDDEN_CEO_PERMISSIONS.has(p.code)))
         setRoles(rolesRes || [])
         setAccessRequests(reqRes || [])
         setSelectedRoleId(rolesRes[0]?.id || '')
@@ -207,7 +203,7 @@ export function CeoRoleMatrixPage() {
     return () => {
       cancelled = true
     }
-  }, [fetchRbacBundle, showToast])
+  }, [fetchRbacBundle, showToast, HIDDEN_CEO_PERMISSIONS])
 
   const selectedRole = useMemo(
     () => roles.find((r) => r.id === selectedRoleId) || null,
@@ -364,14 +360,16 @@ export function CeoRoleMatrixPage() {
         name: newRoleName.trim(),
         description: newRoleDesc.trim() || undefined,
         permissionCodes: presetPerms,
+        tier: newRoleTier,
       })
       setIsCreateOpen(false)
       setNewRoleName('')
       setNewRoleDesc('')
       setNewRolePresetId('')
+      setNewRoleTier('STAFF')
       await loadRbacData(false)
       if (created?.id) setSelectedRoleId(created.id)
-      showToast(`New role "${created.name}" successfully saved to the system.`, 'success')
+      showToast(`New role "${created.name}" (${newRoleTier}) successfully saved to the system.`, 'success')
     } catch (err: any) {
       showToast(err?.message || 'Unable to save new role', 'error')
     }
@@ -419,19 +417,6 @@ export function CeoRoleMatrixPage() {
     })
   }
 
-  const handleTransferCeoSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!successorId) return
-    const successor = allUsers.find((u) => u.id === successorId)
-    setMatrixConfirm({
-      kind: 'transfer_ceo',
-      successorId,
-      successorName: successor?.name || successorId,
-      fallbackSlug: outgoingRoleSlug,
-      reason: transferReason.trim() || undefined,
-    })
-  }
-
   const executeMatrixConfirm = async (_stepUpPhrase?: string, passwordConfirm?: string) => {
     if (!matrixConfirm) return
     setIsConfirmSubmitting(true)
@@ -440,14 +425,14 @@ export function CeoRoleMatrixPage() {
       if (matrixConfirm.kind === 'save_permissions') {
         await erpApi.replaceRolePermissions(matrixConfirm.role.id, matrixConfirm.codes)
         showToast(
-          `Role capabilities for "${matrixConfirm.role.name}" successfully saved to the system.`,
+          `Role capabilities for "${matrixConfirm.role.name}" successfully saved. (Takes effect immediately)`,
           'success',
         )
       } else if (matrixConfirm.kind === 'delete_role') {
         await erpApi.deleteRole(matrixConfirm.role.id, passwordConfirm)
         showToast(`Removed custom role "${matrixConfirm.role.name}" from the system.`, 'info')
       } else if (matrixConfirm.kind === 'assign_role') {
-        const res = await erpApi.assignRoleToEmployee(matrixConfirm.employeeId, {
+        await erpApi.assignRoleToEmployee(matrixConfirm.employeeId, {
           roleId: matrixConfirm.roleId,
           scope: matrixConfirm.scope,
           scopeIds: matrixConfirm.scopeIds,
@@ -456,15 +441,13 @@ export function CeoRoleMatrixPage() {
         setAssignRoleId('')
         setAssignScopeIdsRaw('')
         showToast(
-          res?.pendingApproval
-            ? `Role change request (${matrixConfirm.roleName}) submitted for CHRO/CEO approval.`
-            : `System access updated for ${matrixConfirm.employeeName}.`,
-          res?.pendingApproval ? 'info' : 'success',
+          `Role assignment applied immediately for ${matrixConfirm.employeeName}. (CEO direct power applied)`,
+          'success',
         )
       } else if (matrixConfirm.kind === 'revoke_role') {
         await erpApi.revokeRoleFromEmployee(matrixConfirm.employeeId, matrixConfirm.roleId)
         showToast(
-          `Removed "${matrixConfirm.roleName}" access from ${matrixConfirm.employeeName}.`,
+          `Removed "${matrixConfirm.roleName}" access from ${matrixConfirm.employeeName} immediately.`,
           'info',
         )
       } else if (matrixConfirm.kind === 'approve_request') {
@@ -478,19 +461,6 @@ export function CeoRoleMatrixPage() {
         showToast(
           `Declined ${matrixConfirm.roleName} request for ${matrixConfirm.targetName}.`,
           'info',
-        )
-      } else if (matrixConfirm.kind === 'transfer_ceo') {
-        await erpApi.transferCeo({
-          newCeoEmployeeId: matrixConfirm.successorId,
-          demoteToRoleSlug: matrixConfirm.fallbackSlug,
-          passwordConfirm,
-          reason: matrixConfirm.reason,
-        })
-        setSuccessorId('')
-        setTransferReason('')
-        showToast(
-          `CEO succession complete. Executive authority transferred to ${matrixConfirm.successorName}.`,
-          'warning',
         )
       }
 
@@ -619,11 +589,11 @@ export function CeoRoleMatrixPage() {
         />
       ) : activeTab === 'approvals' ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <div className="lg:col-span-7">
+          <div className="lg:col-span-12">
             <Card
               title="Pending Role Change Approvals"
               icon={UserCheck}
-              subtitle="Maker-Checker governance queue requiring CHRO or CEO authorization"
+              subtitle="Governance queue requiring CEO review and verification"
             >
               {accessRequests.length === 0 ? (
                 <p className="text-xs text-slate-400 py-6 text-center">
@@ -655,7 +625,7 @@ export function CeoRoleMatrixPage() {
                             }
                             size="xs"
                           >
-                            {req.status === 'PENDING' ? 'Pending CHRO/CEO Approval' : req.status}
+                            {req.status === 'PENDING' ? 'Pending CEO Review' : req.status}
                           </Badge>
                         </div>
                         <p className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -704,76 +674,6 @@ export function CeoRoleMatrixPage() {
                   ))}
                 </div>
               )}
-            </Card>
-          </div>
-
-          <div className="lg:col-span-5">
-            <Card
-              title="CEO Succession Handover"
-              icon={Crown}
-              subtitle="Atomically transfer Chief Executive Officer authority to a verified successor"
-            >
-              <form onSubmit={handleTransferCeoSubmit} className="space-y-3 text-xs">
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Select Successor Executive
-                  </label>
-                  <select
-                    required
-                    value={successorId}
-                    onChange={(e) => setSuccessorId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none cursor-pointer"
-                  >
-                    <option value="">Choose new CEO...</option>
-                    {allUsers
-                      .filter((u) => u.id !== currentUser?.id && !u.isSuspended)
-                      .map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.name} ({u.title})
-                        </option>
-                      ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Your Post-Transfer Role
-                  </label>
-                  <select
-                    value={outgoingRoleSlug}
-                    onChange={(e) => setOutgoingRoleSlug(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none cursor-pointer"
-                  >
-                    <option value="developer">Developer (Standard Baseline)</option>
-                    <option value="pm">Project Manager</option>
-                    <option value="cto">Chief Technology Officer (CTO)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Transition Note (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={transferReason}
-                    onChange={(e) => setTransferReason(e.target.value)}
-                    placeholder="e.g. Board-approved leadership transition"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none"
-                  />
-                </div>
-
-                <Button
-                  type="submit"
-                  variant="danger"
-                  size="sm"
-                  icon={Crown}
-                  disabled={!successorId}
-                  className="w-full justify-center"
-                >
-                  Transfer CEO Authority
-                </Button>
-              </form>
             </Card>
           </div>
         </div>
@@ -1205,6 +1105,24 @@ export function CeoRoleMatrixPage() {
 
           <div>
             <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Role Authority Tier *
+            </label>
+            <select
+              value={newRoleTier}
+              onChange={(e) => setNewRoleTier(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none cursor-pointer"
+            >
+              <option value="STAFF">STAFF (Developers, analysts, contributors)</option>
+              <option value="MANAGER">MANAGER (Project managers, squad leads)</option>
+              <option value="EXECUTIVE">EXECUTIVE (C-level executives, department heads)</option>
+            </select>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              Tier ceiling: users can only manage or act upon users in strictly lower tiers.
+            </p>
+          </div>
+
+          <div>
+            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
               Executive Summary
             </label>
             <textarea
@@ -1317,33 +1235,26 @@ export function CeoRoleMatrixPage() {
           }
           isSubmitting={isConfirmSubmitting}
           severity={
-            ['delete_role', 'revoke_role', 'reject_request', 'transfer_ceo'].includes(
-              matrixConfirm.kind,
-            ) ||
+            ['delete_role', 'revoke_role', 'reject_request'].includes(matrixConfirm.kind) ||
             (matrixConfirm.kind === 'save_permissions' && diffStats.criticalChangedCount > 0)
               ? 'danger'
               : 'standard'
           }
           isCritical={
-            matrixConfirm.kind === 'transfer_ceo' ||
             matrixConfirm.kind === 'delete_role' ||
             (matrixConfirm.kind === 'save_permissions' && diffStats.criticalChangedCount > 0)
           }
           requirePhrase={
-            matrixConfirm.kind === 'delete_role'
-              ? 'CONFIRM DELETE'
-              : matrixConfirm.kind === 'transfer_ceo'
-                ? 'CONFIRM TRANSFER'
-                : undefined
+            matrixConfirm.kind === 'delete_role' ? 'CONFIRM DELETE' : undefined
           }
           requirePassword={
-            ['delete_role', 'transfer_ceo'].includes(matrixConfirm.kind) ||
+            matrixConfirm.kind === 'delete_role' ||
             (matrixConfirm.kind === 'save_permissions' && diffStats.criticalChangedCount > 0)
           }
           whatWillHappen={
             matrixConfirm.kind === 'save_permissions'
-              ? `Updates ${diffStats.added} added and ${diffStats.removed} removed permissions, affecting ${affectedEmployeesForSelectedRole.length} employee${affectedEmployeesForSelectedRole.length === 1 ? '' : 's'}${affectedEmployeesForSelectedRole.length > 0 ? ` (${affectedEmployeesForSelectedRole.slice(0, 3).join(', ')})` : ''}.`
-              : undefined
+              ? `Updates ${diffStats.added} added and ${diffStats.removed} removed permissions, affecting ${affectedEmployeesForSelectedRole.length} employee${affectedEmployeesForSelectedRole.length === 1 ? '' : 's'}. This takes effect immediately.`
+              : 'This action is executed directly under CEO authority and takes effect immediately.'
           }
           title={
             matrixConfirm.kind === 'save_permissions'
@@ -1356,9 +1267,7 @@ export function CeoRoleMatrixPage() {
                     ? 'Confirm Revoke Organizational Role'
                     : matrixConfirm.kind === 'approve_request'
                       ? 'Confirm Approve Role Change'
-                      : matrixConfirm.kind === 'reject_request'
-                        ? 'Confirm Reject Role Change'
-                        : 'Confirm CEO Succession Transfer'
+                      : 'Confirm Reject Role Change'
           }
           details={
             matrixConfirm.kind === 'save_permissions'
@@ -1366,29 +1275,25 @@ export function CeoRoleMatrixPage() {
               : matrixConfirm.kind === 'delete_role'
                 ? `Permanently delete custom role "${matrixConfirm.role.name}". Employees holding this role will lose its permissions immediately.`
                 : matrixConfirm.kind === 'assign_role'
-                  ? `Assign "${matrixConfirm.roleName}" access to ${matrixConfirm.employeeName}.`
+                  ? `Assign "${matrixConfirm.roleName}" access to ${matrixConfirm.employeeName}. Takes effect immediately.`
                   : matrixConfirm.kind === 'revoke_role'
-                    ? `Remove "${matrixConfirm.roleName}" access from ${matrixConfirm.employeeName}.`
+                    ? `Remove "${matrixConfirm.roleName}" access from ${matrixConfirm.employeeName}. Takes effect immediately.`
                     : matrixConfirm.kind === 'approve_request'
                       ? `Approve and grant "${matrixConfirm.roleName}" access to ${matrixConfirm.targetName}.`
-                      : matrixConfirm.kind === 'reject_request'
-                        ? `Decline "${matrixConfirm.roleName}" access request for ${matrixConfirm.targetName}.`
-                        : `Transfer CEO ownership to ${matrixConfirm.successorName} and transition your account to ${matrixConfirm.fallbackSlug.toUpperCase()} in a single atomic operation.`
+                      : `Decline "${matrixConfirm.roleName}" access request for ${matrixConfirm.targetName}.`
           }
           confirmLabel={
             matrixConfirm.kind === 'save_permissions'
-              ? 'Save Capabilities'
+              ? 'Save Capabilities (Immediate)'
               : matrixConfirm.kind === 'delete_role'
                 ? 'Delete Custom Role'
                 : matrixConfirm.kind === 'assign_role'
-                  ? 'Assign Role'
+                  ? 'Assign Role Immediately'
                   : matrixConfirm.kind === 'revoke_role'
-                    ? 'Revoke Role'
+                    ? 'Revoke Role Immediately'
                     : matrixConfirm.kind === 'approve_request'
                       ? 'Approve Change'
-                      : matrixConfirm.kind === 'reject_request'
-                        ? 'Reject Request'
-                        : 'Transfer CEO Authority'
+                      : 'Reject Request'
           }
         />
       )}

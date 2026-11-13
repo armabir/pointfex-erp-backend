@@ -40,6 +40,100 @@ export class SecurityControlsService {
     @Optional() private readonly auditLogger?: AuditLoggerService,
   ) {}
 
+  // --- ACCESS HISTORY (CEO & EXECUTIVE ONLY) ---
+
+  async listAccessHistory(actor: AuthenticatedUser) {
+    const [changes, delegations, auditLogs] = await Promise.all([
+      this.prisma.employeeChangeHistory.findMany({
+        take: 100,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.delegation.findMany({
+        take: 50,
+        include: {
+          delegator: { select: { id: true, name: true, email: true } },
+          delegatee: { select: { id: true, name: true, email: true } },
+          permissions: { include: { permission: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.auditLog.findMany({
+        where: {
+          category: { in: ['governance', 'security', 'people'] },
+        },
+        take: 100,
+        orderBy: { timestamp: 'desc' },
+      }),
+    ])
+
+    const timeline: any[] = []
+
+    for (const c of changes) {
+      timeline.push({
+        id: c.id,
+        eventType: c.changeType || 'ROLE_CHANGE',
+        actionKey: c.actionKey || 'access:change',
+        actorId: c.actorId || 'SYSTEM',
+        targetId: c.employeeId,
+        beforeState: c.beforeState,
+        afterState: c.afterState,
+        reason: c.reason,
+        timestamp: c.createdAt,
+      })
+    }
+
+    for (const d of delegations) {
+      timeline.push({
+        id: d.id,
+        eventType: 'DELEGATION',
+        actionKey: 'delegations:create',
+        actorId: d.delegatorId,
+        actorName: d.delegator?.name,
+        targetId: d.delegateeId,
+        targetName: d.delegatee?.name,
+        reason: d.reason,
+        timestamp: d.createdAt,
+        details: {
+          status: d.status,
+          expiresAt: d.expiresAt,
+          permissions: d.permissions.map((p) => (p as any).permission?.code || (p as any).permissionId),
+        },
+      })
+    }
+
+    for (const a of auditLogs) {
+      timeline.push({
+        id: a.id,
+        eventType: 'AUDIT_LOG',
+        actionKey: a.actionCode || 'audit:event',
+        actorId: a.actorId,
+        actorName: a.actorName,
+        targetId: a.entityId,
+        targetName: a.entityTitle,
+        reason: a.description,
+        timestamp: a.timestamp,
+        severity: a.severity,
+      })
+    }
+
+    timeline.sort((x, y) => new Date(y.timestamp).getTime() - new Date(x.timestamp).getTime())
+
+    const totalEvents = timeline.length
+    const grantsCount = timeline.filter((t) => t.eventType.includes('GRANT') || t.actionKey.includes('assign') || t.actionKey.includes('create')).length
+    const revocationsCount = timeline.filter((t) => t.eventType.includes('REVOKE') || t.actionKey.includes('revoke') || t.actionKey.includes('delete')).length
+    const delegationsCount = delegations.length
+
+    return {
+      summary: {
+        totalEvents,
+        grantsCount,
+        revocationsCount,
+        delegationsCount,
+      },
+      timeline,
+    }
+  }
+
   // --- SECURITY SESSIONS ---
 
   async listMySessions(employeeId: string) {

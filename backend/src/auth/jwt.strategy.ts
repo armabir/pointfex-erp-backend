@@ -128,6 +128,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       email: employee.email,
       name: employee.name,
       role: resolvedRole,
+      roles: activeSlugs,
       mustChangePassword: employee.mustChangePassword,
       mustEnrollMfa: employee.mustEnrollMfa && !employee.mfaEnabled,
     }

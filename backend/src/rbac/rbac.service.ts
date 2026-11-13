@@ -203,6 +203,7 @@ export class RbacService {
           isActive: true,
           wildcards,
           includeCritical,
+          tier: dto.tier ? (dto.tier.toUpperCase() as any) : 'STAFF',
           isRootRole: false,
           version: 1,
           createdById: actor.id,
@@ -508,6 +509,7 @@ export class RbacService {
             dto.isActive === false ? new Date() : dto.isActive === true ? null : undefined,
           wildcards: normalizedWildcards,
           includeCritical: dto.includeCritical,
+          tier: dto.tier ? (dto.tier.toUpperCase() as any) : undefined,
           version: nextVersion,
           updatedById: actor.id,
         },
@@ -1016,6 +1018,29 @@ export class RbacService {
     return { permissions, groupedByModule }
   }
 
+  async setRoleTier(
+    roleId: string,
+    tier: string,
+    actor: AuthenticatedUser,
+    changeReason?: string,
+  ) {
+    const validTiers = ['CEO', 'EXECUTIVE', 'MANAGER', 'STAFF']
+    const upper = tier.trim().toUpperCase()
+    if (!validTiers.includes(upper)) {
+      throw new BadRequestException(
+        `Invalid role tier "${tier}". Expected one of: ${validTiers.join(', ')}`,
+      )
+    }
+    return this.updateRole(
+      roleId,
+      {
+        tier: upper,
+        changeReason: changeReason || `Tier updated to ${upper}`,
+      },
+      actor,
+    )
+  }
+
   private async recordRoleVersion(
     tx: Prisma.TransactionClient,
     roleId: string,
@@ -1039,6 +1064,7 @@ export class RbacService {
         wildcards: role.wildcards,
         permissionCodes: role.rolePermissions.map((rp) => rp.permission.code).sort(),
         includeCritical: role.includeCritical,
+        tier: (role as any).tier || 'STAFF',
         isActive: role.isActive,
         changeReason,
         changedById,
@@ -1051,6 +1077,7 @@ export class RbacService {
         wildcards: role.wildcards,
         permissionCodes: role.rolePermissions.map((rp) => rp.permission.code).sort(),
         includeCritical: role.includeCritical,
+        tier: (role as any).tier || 'STAFF',
         isActive: role.isActive,
         changeReason,
         changedById,

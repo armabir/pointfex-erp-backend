@@ -67,7 +67,7 @@ Domains: all
 2. Satisfies every authorization check, including permissions registered in the future.
 3. Hidden from the normal role editor.
 4. Cannot be edited, deleted, cloned or delegated.
-5. Changes hands only through a successful `governance:transfer_ceo`.
+5. Invariant: exactly one active holder matching `CEO_EMAIL`. CEO transfer is disabled by default (`CEO_TRANSFER_ENABLED=false`).
 6. Its use on ⚠ actions, HR-confidential data and production changes is still audited.
 7. The audit log stays append-only, even for the CEO.
 
@@ -175,13 +175,13 @@ Domains: admin
 | --- | --- | --- |
 | `governance:read` | View Governance | |
 | `governance:approve_request` | Approve Access-Change Requests | |
-| `governance:transfer_ceo` | Transfer CEO Authority | ⚠ |
+| `governance:transfer_ceo` | Transfer CEO Authority (Disabled) | ⚠ |
 | `governance:manage_structure` | Manage Corporate Structure | |
 | `governance:appoint_executive` | Appoint Executives | ⚠ |
 | `governance:remove_executive` | Remove Executives | ⚠ |
 | `governance:assign_authority` | Assign Executive Authority | |
 | `governance:revoke_authority` | Revoke Executive Authority | |
-| `governance:manage_succession` | Manage Succession Plan | ⚠ |
+| `governance:manage_succession` | Manage Succession Plan (Disabled) | ⚠ |
 | `governance:create_policy` | Create Policies | |
 | `governance:update_policy` | Update Policies | |
 | `governance:approve_policy` | Approve Policies | |
@@ -864,7 +864,7 @@ These are **seed templates**, not hardcoded roles. The CEO can edit, clone or de
 
 ## D. Hard rules (system invariants, not editable roles)
 
-1. `system:root` exists only for the CEO and cannot be delegated or removed except by `governance:transfer_ceo`.
+1. `system:root` exists only for the CEO and cannot be delegated, removed, edited or suspended through the app. Fixed CEO is enforced at startup and runtime matching `CEO_EMAIL`.
 2. Every ⚠ code is non-delegable, needs dual approval (two different people), and is fully audited.
 3. A user can delegate only permissions they currently hold, inside the scope they hold.
 4. Every delegation has `starts_at` and `expires_at`, a maximum depth of 1, and auto-revokes if the delegator is suspended, demoted, or loses the permission.
@@ -899,17 +899,21 @@ These are **seed templates**, not hardcoded roles. The CEO can edit, clone or de
 
 - 21 modules (00 to 20), including the mother permission.
 - 606 permission codes, with 57 flagged ⚠.
-- The catalog is open: new codes are added through `permissions:register` or a new seed entry, with no change to the authorization engine.continue
+- The catalog is open: new codes are added through `permissions:register` or a new seed entry, with no change to the authorization engine.
 
-Decisions:
-1. Phase 1 parses docs/permissions_master.md verbatim: 606 codes, 57 ⚠. Do not add codes.
-   Update Section F of that file to say 606 codes / 57 ⚠ (the old "~900 / ~70" was a miscount).
-2. Keep the existing isSensitive flag as a separate column from the new ⚠ "critical" flag.
-   The 21 codes that are sensitive today but not ⚠ must keep their extra audit and
-   re-authentication behavior. Do not downgrade any protection silently. List those 21 codes
-   in your Phase 1 summary.
-3. Add a permission_aliases table (or equivalent) for employees:suspend and
-   permissions:delegate so existing users and role grants keep working. Deprecate,
-   never delete.
-4. Phase 1 only. Additive migrations, an idempotent seeder, and tests. Show me the
-   migration SQL and the test results, then stop and wait for my "continue".
+---
+
+## G. Phase 3 Extensions (Dynamic & Governance)
+
+The following permissions are registered for tier-based access, executive voting, project requests, proposals, and identity management:
+
+| Code | Name | Critical | Description |
+| --- | --- | --- | --- |
+| `users:edit_identity` | Edit Any User Name and Work Email | ⚠ | CEO only critical non-delegable identity modification |
+| `votes:cast` | Cast Vote on Executive Proposals & Requests | | Cast vote during executive voting |
+| `projects:request` | Submit Formal Project Creation Request | | Stepper form project request with BDT budget |
+| `projects:propose` | Propose Idea or Suggestion to PM | | Developer proposal submission |
+| `suggestions:submit` | Submit General Suggestion or Feedback | | General feedback and suggestions |
+| `suggestions:forward` | PM Review & Forward Proposal to Vote | | Forward developer proposals to executive vote |
+| `employees:read_basic` | View Public Minimal Directory Information | | Non-admin minimal public directory view |
+| `access_history:read` | View Access & Governance Change History | | Immutable timeline view of access changes |

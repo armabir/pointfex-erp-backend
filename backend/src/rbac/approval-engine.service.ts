@@ -166,7 +166,7 @@ export class ApprovalEngineService {
     }
 
     if (['APPROVED', 'REJECTED', 'TIMED_OUT', 'CANCELLED'].includes(request.status)) {
-      throw new BadRequestException(`Approval request is already finalized (${request.status})`)
+      throw new BadRequestException(`Approval request is already finalized (${request.status}).`)
     }
 
     const now = new Date()
@@ -175,12 +175,18 @@ export class ApprovalEngineService {
         where: { id: requestId },
         data: { status: 'TIMED_OUT', completedAt: now },
       })
-      throw new BadRequestException('Approval request has timed out and can no longer be approved')
+      throw new BadRequestException('Approval request has expired and can no longer be decided.')
     }
 
-    // Hard Rule 5: Nobody approves their own request
-    if (request.requesterId === actor.id && decision === 'APPROVED') {
-      throw new ForbiddenException('Security law: Nobody can approve their own request.')
+    // Hard Rule: Self-approval is blocked for everyone
+    if (
+      decision === 'APPROVED' &&
+      (request.requesterId === actor.id ||
+        (request.entityType === 'user' && request.entityId === actor.id))
+    ) {
+      throw new ForbiddenException(
+        'Self-approval is blocked. An independent decision maker must approve this request.',
+      )
     }
 
     // Dual approval invariant: Two DIFFERENT people must approve; same person cannot sign two steps

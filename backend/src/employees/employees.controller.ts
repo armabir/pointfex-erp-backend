@@ -33,9 +33,13 @@ export class EmployeesController {
   }
 
   @Get()
-  @RequirePermissions('employees:read_directory')
-  findAll(@Query('role') roleCategory?: string, @Query('teamId') teamId?: string) {
-    return this.employeesService.findAll(roleCategory, teamId)
+  @RequireAnyPermission('employees:read_directory', 'employees:read_basic', 'employees:read_all')
+  findAll(
+    @Query('role') roleCategory?: string,
+    @Query('teamId') teamId?: string,
+    @CurrentUser() actor?: AuthenticatedUser,
+  ) {
+    return this.employeesService.findAll(roleCategory, teamId, actor)
   }
 
   @Get(':id')
@@ -103,5 +107,22 @@ export class EmployeesController {
     @CurrentUser() actor?: AuthenticatedUser,
   ) {
     return this.employeesService.update(id, updateEmployeeDto, actor, headers, request)
+  }
+
+  @Patch(':id/identity')
+  @RequirePermissions('users:edit_identity')
+  @RequiresFreshMfa('users:edit_identity')
+  updateIdentity(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      name?: string
+      email?: string
+      addToAllowlist?: boolean
+      reason: string
+    },
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.employeesService.updateUserIdentity(id, body, actor)
   }
 }

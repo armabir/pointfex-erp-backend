@@ -89,6 +89,10 @@ model Employee {
   authoredChangeHistory  EmployeeChangeHistory[] @relation("EmployeeChangeActor")
   tempPasswordExpiresAt  DateTime?
   externalIdentities     ExternalIdentity[]
+  executiveVotes         ExecutiveVote[]          @relation("VoterExecutiveVotes")
+  projectRequests        ProjectCreationRequest[] @relation("ProjectCreationRequesters")
+  proposals              ProjectProposal[]        @relation("ProjectProposalRequesters")
+  passwordHistories      PasswordHistory[]        @relation("EmployeePasswordHistories")
 
   @@map("employees")
 }
@@ -362,6 +366,10 @@ model BudgetRequest {
   status          String    @default("pending") // 'pending' | 'approved' | 'rejected'
   feedback        String?
   reviewedById    String?
+  urgency         String?   @default("normal")
+  whatItCovers    String?
+  voteDeadline    DateTime?
+  decisionMode    DecisionMode @default(EXECUTIVE_VOTE)
   requestedAt     DateTime  @default(now())
   reviewedAt      DateTime?
 
@@ -768,11 +776,19 @@ enum AuthorizationScope {
   GLOBAL
 }
 
+enum RoleTier {
+  CEO
+  EXECUTIVE
+  MANAGER
+  STAFF
+}
+
 model Role {
   id              String    @id @default(cuid())
   slug            String    @unique
   name            String    @unique
   description     String?
+  tier            RoleTier  @default(STAFF)
   isSystemDefault Boolean   @default(false)
   isActive        Boolean   @default(true)
   wildcards       String[]  @default([])
@@ -793,6 +809,7 @@ model Role {
   accessChangeRequests AccessChangeRequest[]
 
   @@index([isActive])
+  @@index([tier])
   @@index([isRootRole])
   @@index([templateCode])
   @@map("roles")
@@ -804,6 +821,7 @@ model RoleVersion {
   version         Int
   name            String
   description     String?
+  tier            RoleTier @default(STAFF)
   wildcards       String[] @default([])
   permissionCodes String[] @default([])
   includeCritical Boolean  @default(false)
@@ -825,6 +843,7 @@ model RoleTemplate {
   code            String             @unique
   name            String
   description     String?
+  tier            RoleTier           @default(STAFF)
   defaultScope    AuthorizationScope @default(ORG)
   wildcards       String[]           @default([])
   permissionCodes String[]           @default([])
@@ -1404,5 +1423,126 @@ model AllowlistEmailRequest {
   @@index([email])
   @@map("allowlist_email_requests")
 }
+
+// --------------------------------------------------------------------------
+// 14. TIERS, DECISION POLICIES, EXECUTIVE VOTING & HARDENING
+// --------------------------------------------------------------------------
+
+enum DecisionMode {
+  CEO_ONLY
+  EXECUTIVE_VOTE
+}
+
+model DecisionPolicy {
+  id          String       @id @default(cuid())
+  requestType String       @unique // e.g. 'role_change', 'project_request', 'budget_increase', 'proposal'
+  mode        DecisionMode @default(CEO_ONLY)
+  description String?
+  updatedById String?
+  updatedAt   DateTime     @updatedAt
+  createdAt   DateTime     @default(now())
+
+  @@map("decision_policies")
+}
+
+enum VoteChoice {
+  APPROVE
+  REJECT
+}
+
+enum ProjectRequestStatus {
+  DRAFT
+  SUBMITTED
+  IN_VOTE
+  APPROVED
+  REJECTED
+  EXPIRED
+  WITHDRAWN
+}
+
+model ExecutiveVote {
+  id          String     @id @default(cuid())
+  requestId   String
+  targetType  String     // 'PROJECT_REQUEST' | 'BUDGET_REQUEST' | 'ACCESS_REQUEST'
+  voterId     String
+  choice      VoteChoice
+  reason      String?
+  mfaVerified Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  voter Employee @relation("VoterExecutiveVotes", fields: [voterId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, voterId])
+  @@index([requestId])
+  @@index([voterId])
+  @@map("executive_votes")
+}
+
+model ProjectCreationRequest {
+  id                  String               @id @default(cuid())
+  title               String
+  code                String?
+  requesterId         String
+  proposedPmId        String?
+  scopeDeliverables   String
+  timeline            String
+  teamDetails         Json?
+  initialBudgetBDT    Decimal              @db.Decimal(14, 2)
+  risks               String
+  successCriteria     String
+  justification       String
+  creditedDeveloperId String?
+  proposalId          String?
+  status              ProjectRequestStatus @default(SUBMITTED)
+  decisionMode        DecisionMode         @default(EXECUTIVE_VOTE)
+  voteDeadline        DateTime?
+  approvedProjectId   String?
+  decidedById         String?
+  decisionReason      String?
+  decidedAt           DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  requester Employee @relation("ProjectCreationRequesters", fields: [requesterId], references: [id], onDelete: Cascade)
+
+  @@index([requesterId])
+  @@index([status])
+  @@map("project_creation_requests")
+}
+
+model ProjectProposal {
+  id                 String   @id @default(cuid())
+  requesterId        String
+  title              String
+  description        String
+  suggestedPmId      String?
+  status             String   @default("PENDING") // PENDING, FORWARDED, RETURNED, DECLINED
+  comments           String?
+  forwardedRequestId String?
+  type               String   @default("PROPOSAL") // PROPOSAL, SUGGESTION, GENERAL_COMPLAINT
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  requester Employee @relation("ProjectProposalRequesters", fields: [requesterId], references: [id], onDelete: Cascade)
+
+  @@index([requesterId])
+  @@index([status])
+  @@map("project_proposals")
+}
+
+model PasswordHistory {
+  id           String   @id @default(cuid())
+  employeeId   String
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  employee Employee @relation("EmployeePasswordHistories", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([createdAt])
+  @@map("password_histories")
+}
+
 
 

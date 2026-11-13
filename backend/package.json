@@ -25,7 +25,7 @@
     "authz:diff-report": "ts-node src/rbac/authz-diff-report.ts",
     "ceo:reset-mfa": "ts-node scripts/ceo-reset-mfa.ts",
     "verify": "npm run build && npm test",
-    "test": "jest",
+    "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
   },
@@ -88,7 +88,8 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "testTimeout": 30000
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

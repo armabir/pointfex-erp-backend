@@ -3,6 +3,8 @@ import { TeamsService } from './teams.service'
 import { CreateTeamDto, UpdateTeamDto, AddTeamMemberDto } from './dto/team.dto'
 import { PermissionsGuard } from '../common/permissions.guard'
 import { RequireAnyPermission, RequirePermissions } from '../common/require-permissions.decorator'
+import { CurrentUser } from '../common/current-user.decorator'
+import { AuthenticatedUser } from '../common/auth-user.interface'
 
 @Controller('teams')
 @UseGuards(PermissionsGuard)
@@ -11,8 +13,8 @@ export class TeamsController {
 
   @Get()
   @RequireAnyPermission('teams:read_own', 'teams:read_all')
-  findAll() {
-    return this.teamsService.findAll()
+  findAll(@CurrentUser() actor?: AuthenticatedUser) {
+    return this.teamsService.findAll(actor)
   }
 
   @Get(':id')

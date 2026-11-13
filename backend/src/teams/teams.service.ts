@@ -1,13 +1,30 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
 import { PrismaService } from '../common/prisma.service'
 import { CreateTeamDto, UpdateTeamDto, AddTeamMemberDto } from './dto/team.dto'
+import { AuthenticatedUser } from '../common/auth-user.interface'
 
 @Injectable()
 export class TeamsService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll() {
+  async findAll(actor?: AuthenticatedUser) {
+    const isLeadership =
+      actor?.roles?.includes('system:root') ||
+      (actor?.role || '').toLowerCase() === 'ceo' ||
+      actor?.roles?.some((r) => ['cto', 'coo', 'chro'].includes(r.toLowerCase()))
+
+    let where: any = undefined
+    if (actor && !isLeadership) {
+      where = {
+        OR: [
+          { memberships: { some: { employeeId: actor.id, isActive: true } } },
+          { pmPosition: { assignments: { some: { employeeId: actor.id, isActive: true } } } },
+        ],
+      }
+    }
+
     const teams = await this.prisma.team.findMany({
+      where,
       include: {
         pmPosition: {
           include: {

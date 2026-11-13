@@ -6,6 +6,7 @@ import { FirstLoginSecurityPage } from './pages/auth/FirstLoginSecurityPage'
 import { DesktopNoticeModal } from './components/common/DesktopNoticeModal'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { SkeletonCard } from './components/common/Skeleton'
+import { IdleTimeoutModal } from './components/common/IdleTimeoutModal'
 import { usePermissions } from './hooks/usePermissions'
 import { canAccessRoute } from './config/nav-registry'
 
@@ -108,6 +109,18 @@ const ChroPerformancePage = lazy(() =>
 )
 const CeoRoleMatrixPage = lazy(() =>
   import('./pages/ceo/CeoRoleMatrixPage').then((m) => ({ default: m.CeoRoleMatrixPage })),
+)
+const AccessHistoryPage = lazy(() =>
+  import('./pages/admin/AccessHistoryPage').then((m) => ({ default: m.AccessHistoryPage })),
+)
+const ProjectRequestsPage = lazy(() =>
+  import('./pages/projects/ProjectRequestsPage').then((m) => ({ default: m.ProjectRequestsPage })),
+)
+const ProposalsPage = lazy(() =>
+  import('./pages/projects/ProposalsPage').then((m) => ({ default: m.ProposalsPage })),
+)
+const MyRequestsPage = lazy(() =>
+  import('./pages/projects/MyRequestsPage').then((m) => ({ default: m.MyRequestsPage })),
 )
 const DelegationCenterPage = lazy(() =>
   import('./pages/security/DelegationCenterPage').then((m) => ({
@@ -343,6 +356,18 @@ function MainContentRouter() {
   if (currentRoute === 'security-overview') {
     return <SecurityOverviewPage />
   }
+  if (currentRoute === 'access-history') {
+    return <AccessHistoryPage />
+  }
+  if (currentRoute === 'project-requests') {
+    return <ProjectRequestsPage />
+  }
+  if (currentRoute === 'proposals') {
+    return <ProposalsPage />
+  }
+  if (currentRoute === 'my-requests') {
+    return <MyRequestsPage />
+  }
 
   // Dashboard resolved via declarative widget registry (never role switches)
   if (currentRoute === 'dashboard') {
@@ -353,7 +378,7 @@ function MainContentRouter() {
 }
 
 function AppRoot() {
-  const { isAuthenticated, isAuthChecking, mustChangePassword, mustEnrollMfa } = useApp()
+  const { isAuthenticated, isAuthChecking, mustChangePassword, mustEnrollMfa, logout } = useApp()
 
   useEffect(() => {
     if (!isAuthChecking) {
@@ -409,6 +434,7 @@ function AppRoot() {
   return (
     <>
       <DesktopNoticeModal />
+      <IdleTimeoutModal isAuthenticated={isAuthenticated} onLogout={logout} />
       <Shell>
         <Suspense fallback={<PageRouteFallback />}>
           <MainContentRouter />

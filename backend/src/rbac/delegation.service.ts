@@ -18,6 +18,8 @@ import {
   ScopedGrantEntry,
 } from './authorization.service'
 
+import { getEmployeeEffectiveTier, RoleTier } from '../common/tier.util'
+
 export interface CreateDelegationInput {
   delegateeId: string
   permissionCodes: string[]
@@ -133,15 +135,44 @@ export class DelegationService
       throw new BadRequestException('A delegation reason (at least 3 characters) is required')
     }
 
+    const isCeo =
+      actor.role === 'system:root' ||
+      actor.roles?.includes('system:root') ||
+      (actor.role || '').toLowerCase() === 'ceo'
+    const isExecutive =
+      ['cto', 'cfo', 'chro', 'cpo', 'cro', 'coo'].includes((actor.role || '').toLowerCase()) ||
+      actor.roles?.some((r) => ['cto', 'cfo', 'chro', 'cpo', 'cro', 'coo'].includes(r.toLowerCase()))
+    const actorTier = isCeo
+      ? RoleTier.CEO
+      : isExecutive
+        ? RoleTier.EXECUTIVE
+        : await getEmployeeEffectiveTier(this.prisma, delegatorId)
+    if (actorTier !== RoleTier.CEO && actorTier !== RoleTier.EXECUTIVE) {
+      throw new ForbiddenException(
+        'Only the CEO and Executives can create delegations. PM and Developer can only receive.',
+      )
+    }
+
     const permissionCodes = Array.from(
       new Set((input.permissionCodes ?? []).map((c) => c.trim()).filter(Boolean)),
     )
     if (permissionCodes.length === 0) {
       throw new BadRequestException('At least one permissionCode is required for delegation')
     }
-    if (permissionCodes.includes('login_allowlist:manage') || permissionCodes.includes('system:root')) {
+    if (
+      permissionCodes.includes('login_allowlist:manage') ||
+      permissionCodes.includes('system:root')
+    ) {
       throw new ForbiddenException(
         'CEO-only permissions (system:root, login_allowlist:manage) cannot be delegated.',
+      )
+    }
+    if (
+      permissionCodes.includes('governance:transfer_ceo') ||
+      permissionCodes.includes('governance:manage_succession')
+    ) {
+      throw new ForbiddenException(
+        'CEO transfer and succession powers cannot be delegated.',
       )
     }
 
@@ -369,10 +400,11 @@ export class DelegationService
 
     const isOriginalHolder = delegation.delegatorId === actor.id
     if (!isOriginalHolder) {
-      const canRevoke = (await this.authz.check(actor, 'delegations:revoke')).allowed
-      if (!canRevoke) {
+      const isCeo =
+        actor.roles?.includes('system:root') || (actor.role || '').toLowerCase() === 'ceo'
+      if (!isCeo) {
         throw new ForbiddenException(
-          'Only the original delegator, an authorized delegations:revoke admin, or system:root can revoke this delegation',
+          "Executives can only revoke delegations they created. Only the CEO can revoke third-party delegations.",
         )
       }
     }

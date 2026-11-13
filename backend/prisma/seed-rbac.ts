@@ -891,6 +891,62 @@ export async function seedRbac(
     `     Catalog synced: ${catalogResult.categoryCount} categories, ${catalogResult.masterPermissionCount} master codes (${catalogResult.criticalCount} ⚠ critical, ${catalogResult.delegableCount} delegable), ${catalogResult.deprecatedCount} deprecated, ${catalogResult.sensitiveNonCriticalActiveCount} sensitive non-critical preserved, ${catalogResult.aliasCount} aliases.`,
   )
 
+  console.log('  -> Seeding Phase 3 Extension Permissions & Decision Policies...')
+  const PHASE3_EXTENSIONS = [
+    { code: 'users:edit_identity', resource: 'users', action: 'edit_identity', module: 'admin', name: 'Edit Any User Name and Work Email', isCritical: true, isDelegable: false, isSensitive: true },
+    { code: 'votes:cast', resource: 'governance', action: 'cast_vote', module: 'governance', name: 'Cast Vote on Executive Proposals & Requests', isCritical: false, isDelegable: true, isSensitive: false },
+    { code: 'projects:request', resource: 'projects', action: 'request', module: 'engineering', name: 'Submit Formal Project Creation Request', isCritical: false, isDelegable: true, isSensitive: false },
+    { code: 'projects:propose', resource: 'projects', action: 'propose', module: 'engineering', name: 'Propose Idea or Suggestion to PM', isCritical: false, isDelegable: true, isSensitive: false },
+    { code: 'suggestions:submit', resource: 'suggestions', action: 'submit', module: 'engineering', name: 'Submit General Suggestion or Feedback', isCritical: false, isDelegable: true, isSensitive: false },
+    { code: 'suggestions:forward', resource: 'suggestions', action: 'forward', module: 'engineering', name: 'PM Review & Forward Proposal to Vote', isCritical: false, isDelegable: true, isSensitive: false },
+    { code: 'employees:read_basic', resource: 'employees', action: 'read_basic', module: 'hr', name: 'View Public Minimal Directory Information', isCritical: false, isDelegable: true, isSensitive: false },
+    { code: 'access_history:read', resource: 'governance', action: 'read_access_history', module: 'admin', name: 'View Access & Governance Change History', isCritical: false, isDelegable: true, isSensitive: false },
+  ]
+  for (const ext of PHASE3_EXTENSIONS) {
+    const record = await prisma.permission.upsert({
+      where: { code: ext.code },
+      update: {
+        resource: ext.resource,
+        action: ext.action,
+        module: ext.module,
+        name: ext.name,
+        description: ext.name,
+        isSensitive: ext.isSensitive,
+        isCritical: ext.isCritical,
+        isDelegable: ext.isDelegable,
+        isDeprecated: false,
+      },
+      create: {
+        code: ext.code,
+        resource: ext.resource,
+        action: ext.action,
+        module: ext.module,
+        name: ext.name,
+        description: ext.name,
+        isSensitive: ext.isSensitive,
+        isCritical: ext.isCritical,
+        isDelegable: ext.isDelegable,
+        isDeprecated: false,
+        isSystemRoot: false,
+      },
+    })
+    permissionIdByCode.set(record.code, record.id)
+  }
+
+  const DEFAULT_POLICIES = [
+    { requestType: 'PROJECT_CREATION', mode: 'EXECUTIVE_VOTE' as const, description: 'New project requests require executive majority vote (>50%).' },
+    { requestType: 'BUDGET_REQUEST', mode: 'EXECUTIVE_VOTE' as const, description: 'Additional budget requests require executive majority vote (>50%).' },
+    { requestType: 'ROLE_ASSIGNMENT', mode: 'CEO_ONLY' as const, description: 'Role and permission changes are decided exclusively by the CEO.' },
+    { requestType: 'ACCESS_CHANGE', mode: 'CEO_ONLY' as const, description: 'Direct grants and position changes are decided exclusively by the CEO.' },
+  ]
+  for (const pol of DEFAULT_POLICIES) {
+    await prisma.decisionPolicy.upsert({
+      where: { requestType: pol.requestType },
+      update: { mode: pol.mode, description: pol.description },
+      create: { requestType: pol.requestType, mode: pol.mode, description: pol.description },
+    })
+  }
+
   console.log('  -> Seeding Default System Roles & Role-Permission Mappings...')
   const roleIdBySlug = new Map<string, string>()
 
