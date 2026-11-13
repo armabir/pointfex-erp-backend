@@ -43,8 +43,84 @@ import {
   UserPlus,
 } from 'lucide-react'
 
-const isCeoTargetUser = (user: Pick<User, 'role' | 'activeRoleSlugs'>) =>
-  user.role === 'ceo' || Boolean(user.activeRoleSlugs?.includes('ceo'))
+const isCeoTargetUser = (user: Pick<User, 'role' | 'activeRoleSlugs'> & { title?: string }) =>
+  user.role === 'ceo' ||
+  Boolean(user.activeRoleSlugs?.includes('ceo')) ||
+  user.title?.toLowerCase().includes('chief executive officer')
+
+export function resolveUserBadge(user: User): { label: string; variant: 'ceo' | 'clevel' | 'pm' | 'slate' | 'purple' | 'indigo' } {
+  if (isCeoTargetUser(user)) {
+    return { label: 'CEO', variant: 'ceo' }
+  }
+
+  const role = (user.role || '').toLowerCase()
+  const title = (user.title || '').toLowerCase()
+  const topActiveRole = (user.activeRoleNames?.[0] || user.activeRoleSlugs?.[0] || '').toLowerCase()
+
+  // 1. C-Level Executives
+  if (role === 'cto' || topActiveRole.includes('cto') || title.includes('chief technology officer')) {
+    return { label: 'CTO', variant: 'clevel' }
+  }
+  if (role === 'cfo' || topActiveRole.includes('cfo') || title.includes('chief financial officer')) {
+    return { label: 'CFO', variant: 'clevel' }
+  }
+  if (
+    role === 'chro' ||
+    role === 'cpo' ||
+    topActiveRole.includes('chro') ||
+    topActiveRole.includes('cpo') ||
+    title.includes('chief human resources officer') ||
+    title.includes('chief people officer')
+  ) {
+    return { label: 'CHRO', variant: 'clevel' }
+  }
+  if (topActiveRole.includes('coo') || title.includes('chief operating officer')) {
+    return { label: 'COO', variant: 'clevel' }
+  }
+  if (topActiveRole.includes('cmo') || title.includes('chief marketing officer')) {
+    return { label: 'CMO', variant: 'clevel' }
+  }
+  if (topActiveRole.includes('cro') || title.includes('chief revenue officer')) {
+    return { label: 'CRO', variant: 'clevel' }
+  }
+
+  // 2. Project Managers
+  if (role === 'pm' || topActiveRole === 'pm' || topActiveRole.includes('project manager') || title.includes('project manager')) {
+    return { label: 'PM', variant: 'pm' }
+  }
+
+  // 3. Squad Lead / Engineering Lead
+  if (topActiveRole.includes('squad lead') || title.includes('squad lead') || title.includes('lead software engineer') || title.includes('lead developer')) {
+    return { label: 'SQUAD LEAD', variant: 'indigo' }
+  }
+
+  // 4. Custom Active Role (e.g. Chief AI Officer, QA Engineer, Designer)
+  if (user.activeRoleNames && user.activeRoleNames.length > 0 && user.activeRoleNames[0].trim()) {
+    return { label: user.activeRoleNames[0].toUpperCase(), variant: 'purple' }
+  }
+
+  // 5. Developers / Engineers
+  if (
+    role === 'developer' ||
+    title.includes('developer') ||
+    title.includes('engineer') ||
+    title.includes('software') ||
+    title.includes('frontend') ||
+    title.includes('backend') ||
+    title.includes('fullstack')
+  ) {
+    return { label: 'DEVELOPER', variant: 'slate' }
+  }
+
+  // 6. Generic Title or Role fallback
+  if (user.title && user.title.trim()) {
+    // If title has a bracket or squad prefix e.g. "Senior QA Engineer (Squad Alpha)", clean it
+    const cleanTitle = user.title.split('(')[0].trim().toUpperCase()
+    return { label: cleanTitle, variant: 'slate' }
+  }
+
+  return { label: role ? role.toUpperCase() : 'STAFF', variant: 'slate' }
+}
 
 interface PendingRoleRequestItem {
   id: string
@@ -684,11 +760,12 @@ export function CtoPeoplePage() {
         {filteredUsers.map((user) => {
           const team = getUserTeam(user.teamId)
           const activeTasks = getUserTasks(user.id)
-          const isTargetCeo = isCeoTargetUser(user)
-          const isTargetCLevel = ['ceo', 'cto', 'cfo', 'chro', 'cpo'].includes(user.role)
+          const badgeInfo = resolveUserBadge(user)
+          const isTargetCeo = badgeInfo.variant === 'ceo'
+          const isTargetCLevel = badgeInfo.variant === 'clevel'
           const showGrantOnCard = canGrantAccess
           const showEditOnCard = canEditProfiles
-          const roleDisplayBadge = user.role === 'cpo' ? 'CHRO' : user.role.toUpperCase()
+          const roleDisplayBadge = badgeInfo.label
 
           return (
             <div
@@ -745,7 +822,18 @@ export function CtoPeoplePage() {
                         {roleDisplayBadge}
                       </span>
                     ) : (
-                      <Badge variant={user.role === 'pm' ? 'purple' : 'slate'} size="xs">
+                      <Badge
+                        variant={
+                          badgeInfo.variant === 'pm'
+                            ? 'purple'
+                            : badgeInfo.variant === 'indigo'
+                              ? 'indigo'
+                              : badgeInfo.variant === 'purple'
+                                ? 'purple'
+                                : 'slate'
+                        }
+                        size="xs"
+                      >
                         {roleDisplayBadge}
                       </Badge>
                     )}
@@ -1016,7 +1104,7 @@ export function CtoPeoplePage() {
                 </p>
                 <div className="flex items-center gap-2.5 mt-1.5">
                   <Badge variant="indigo" size="xs">
-                    {inspectedUser.role === 'cpo' ? 'CHRO' : inspectedUser.role.toUpperCase()}
+                    {resolveUserBadge(inspectedUser).label}
                   </Badge>
                   <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
                     <Mail className="w-3 h-3" />

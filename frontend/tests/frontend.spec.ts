@@ -403,7 +403,7 @@ export function runFrontendSuite(): Array<{ name: string; pass: boolean }> {
       'MFA Status',
       'MfaRecoveryCodesCard',
       'Active Sessions',
-      'Theme &amp; Density',
+      'AdditionalGrantedAccessCard',
     ]) {
       assert.ok(accountSource.includes(section), `MyAccountPage missing "${section}"`)
     }
