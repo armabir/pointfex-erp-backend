@@ -13,6 +13,7 @@ import { useApp } from '../../context/AppContext'
 import { Card } from '../common/Card'
 import { Badge } from '../common/Badge'
 import { Button } from '../common/Button'
+import { SecurityConfirmModal } from '../common/SecurityConfirmModal'
 import { getPermissionDisplay } from '../../utils/permission-dictionary'
 
 interface EffectiveAuthzPanelProps {
@@ -44,6 +45,17 @@ export function EffectiveAuthzPanel({
   const [denyCode, setDenyCode] = useState(permissions[0]?.code || 'tasks:approve')
   const [denyReason, setDenyReason] = useState('')
 
+  // Confirmation Modal State
+  const [lifecycleConfirm, setLifecycleConfirm] = useState<
+    | { kind: 'template'; templateCode: string; roleName?: string }
+    | { kind: 'clone'; sourceRoleId: string; sourceRoleName: string; cloneName: string }
+    | { kind: 'activate'; roleId: string; roleName: string }
+    | { kind: 'deactivate'; roleId: string; roleName: string }
+    | { kind: 'denial'; userId: string; userName: string; code: string; reason: string }
+    | null
+  >(null)
+  const [isConfirmSubmitting, setIsConfirmSubmitting] = useState(false)
+
   useEffect(() => {
     erpApi
       .listRoleTemplates()
@@ -74,63 +86,108 @@ export function EffectiveAuthzPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debugUserId])
 
-  const handleInstantiateTemplate = async (e: React.FormEvent) => {
+  const handleInstantiateTemplate = (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedTemplateCode) return
-    try {
-      await erpApi.createRoleFromTemplate(selectedTemplateCode, {
-        name: templateRoleName.trim() || undefined,
-      })
-      showToast(`Role instantiated from template ${selectedTemplateCode}`, 'success')
-      setTemplateRoleName('')
-      await onRolesChanged()
-    } catch (err: any) {
-      showToast(err?.message || 'Template instantiation failed', 'error')
-    }
+    const tmpl = templates.find((t) => t.code === selectedTemplateCode)
+    setLifecycleConfirm({
+      kind: 'template',
+      templateCode: selectedTemplateCode,
+      roleName: templateRoleName.trim() || tmpl?.name || selectedTemplateCode,
+    })
   }
 
-  const handleClone = async (e: React.FormEvent) => {
+  const handleClone = (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedRoleForLifecycle || !cloneName.trim()) return
-    try {
-      await erpApi.cloneRole(selectedRoleForLifecycle, { name: cloneName.trim() })
-      showToast(`Cloned role as "${cloneName.trim()}"`, 'success')
-      setCloneName('')
-      await onRolesChanged()
-    } catch (err: any) {
-      showToast(err?.message || 'Role clone blocked', 'error')
+    const role = roles.find((r) => r.id === selectedRoleForLifecycle)
+    setLifecycleConfirm({
+      kind: 'clone',
+      sourceRoleId: selectedRoleForLifecycle,
+      sourceRoleName: role?.name || 'Role',
+      cloneName: cloneName.trim(),
+    })
+  }
+
+  const handleToggleActive = (role: any) => {
+    if (!role) return
+    if (role.isActive) {
+      setLifecycleConfirm({
+        kind: 'deactivate',
+        roleId: role.id,
+        roleName: role.name,
+      })
+    } else {
+      setLifecycleConfirm({
+        kind: 'activate',
+        roleId: role.id,
+        roleName: role.name,
+      })
     }
   }
 
-  const handleToggleActive = async (role: any) => {
-    try {
-      if (role.isActive) {
-        await erpApi.deactivateRole(role.id, 'Deactivated via Governance console')
-        showToast(`Role "${role.name}" deactivated.`, 'info')
-      } else {
-        await erpApi.activateRole(role.id, 'Reactivated via Governance console')
-        showToast(`Role "${role.name}" activated.`, 'success')
-      }
-      await onRolesChanged()
-    } catch (err: any) {
-      showToast(err?.message || 'Status toggle blocked', 'error')
-    }
-  }
-
-  const handleAddDenial = async (e: React.FormEvent) => {
+  const handleAddDenial = (e: React.FormEvent) => {
     e.preventDefault()
     if (!debugUserId || !denyCode) return
+    const user = users.find((u) => u.id === debugUserId)
+    setLifecycleConfirm({
+      kind: 'denial',
+      userId: debugUserId,
+      userName: user?.name || 'User',
+      code: denyCode,
+      reason: denyReason.trim() || 'Explicit administrative denial',
+    })
+  }
+
+  const executeLifecycleConfirm = async (mfaCode?: string) => {
+    if (!lifecycleConfirm) return
+    setIsConfirmSubmitting(true)
     try {
-      await erpApi.grantDenial(debugUserId, {
-        permissionCode: denyCode,
-        scope: 'ORG',
-        reason: denyReason.trim() || 'Explicit administrative denial',
-      })
-      showToast(`Added explicit denial for "${denyCode}"`, 'warning')
-      setDenyReason('')
-      await loadEffective(debugUserId)
+      if (lifecycleConfirm.kind === 'template') {
+        await erpApi.createRoleFromTemplate(
+          lifecycleConfirm.templateCode,
+          { name: lifecycleConfirm.roleName },
+          mfaCode,
+        )
+        showToast(`Role instantiated from template ${lifecycleConfirm.templateCode}`, 'success')
+        setTemplateRoleName('')
+        await onRolesChanged()
+      } else if (lifecycleConfirm.kind === 'clone') {
+        await erpApi.cloneRole(
+          lifecycleConfirm.sourceRoleId,
+          { name: lifecycleConfirm.cloneName },
+          mfaCode,
+        )
+        showToast(`Cloned role as "${lifecycleConfirm.cloneName}"`, 'success')
+        setCloneName('')
+        await onRolesChanged()
+      } else if (lifecycleConfirm.kind === 'activate') {
+        await erpApi.activateRole(lifecycleConfirm.roleId, 'Reactivated via Governance console', mfaCode)
+        showToast(`Role "${lifecycleConfirm.roleName}" activated.`, 'success')
+        await onRolesChanged()
+      } else if (lifecycleConfirm.kind === 'deactivate') {
+        await erpApi.deactivateRole(lifecycleConfirm.roleId, 'Deactivated via Governance console', mfaCode)
+        showToast(`Role "${lifecycleConfirm.roleName}" deactivated.`, 'info')
+        await onRolesChanged()
+      } else if (lifecycleConfirm.kind === 'denial') {
+        await erpApi.grantDenial(
+          lifecycleConfirm.userId,
+          {
+            permissionCode: lifecycleConfirm.code,
+            scope: 'ORG',
+            reason: lifecycleConfirm.reason,
+          },
+          mfaCode,
+        )
+        showToast(`Added explicit denial for "${lifecycleConfirm.code}"`, 'warning')
+        setDenyReason('')
+        await loadEffective(lifecycleConfirm.userId)
+      }
+      setLifecycleConfirm(null)
     } catch (err: any) {
-      showToast(err?.message || 'Unable to apply explicit denial', 'error')
+      showToast(err?.message || 'Action blocked or failed', 'error')
+    } finally {
+      setIsConfirmSubmitting(false)
     }
   }
 
@@ -421,6 +478,55 @@ export function EffectiveAuthzPanel({
           )}
         </div>
       </Card>
+
+      {lifecycleConfirm && (
+        <SecurityConfirmModal
+          isOpen={!!lifecycleConfirm}
+          onClose={() => setLifecycleConfirm(null)}
+          onConfirm={(_phrase, _pwd, mfaCode) => void executeLifecycleConfirm(mfaCode)}
+          isSubmitting={isConfirmSubmitting}
+          severity={
+            lifecycleConfirm.kind === 'deactivate' || lifecycleConfirm.kind === 'denial'
+              ? 'danger'
+              : 'standard'
+          }
+          isCritical={lifecycleConfirm.kind === 'deactivate' || lifecycleConfirm.kind === 'denial'}
+          title={
+            lifecycleConfirm.kind === 'template'
+              ? 'Confirm Instantiate Role Template'
+              : lifecycleConfirm.kind === 'clone'
+                ? 'Confirm Clone Role'
+                : lifecycleConfirm.kind === 'activate'
+                  ? 'Confirm Activate Role'
+                  : lifecycleConfirm.kind === 'deactivate'
+                    ? 'Confirm Deactivate Role'
+                    : 'Confirm Explicit Denial Override'
+          }
+          details={
+            lifecycleConfirm.kind === 'template'
+              ? `Instantiate editable runtime role "${lifecycleConfirm.roleName}" from template "${lifecycleConfirm.templateCode}".`
+              : lifecycleConfirm.kind === 'clone'
+                ? `Create a full clone of role "${lifecycleConfirm.sourceRoleName}" as "${lifecycleConfirm.cloneName}".`
+                : lifecycleConfirm.kind === 'activate'
+                  ? `Activate role "${lifecycleConfirm.roleName}". Users with this role will immediately regain its capabilities.`
+                  : lifecycleConfirm.kind === 'deactivate'
+                    ? `Deactivate role "${lifecycleConfirm.roleName}". Users with this role will temporarily lose its capabilities.`
+                    : `Apply explicit administrative denial for "${lifecycleConfirm.code}" on ${lifecycleConfirm.userName}.`
+          }
+          whatWillHappen="This administrative governance action requires a fresh 6-digit authenticator code and takes effect immediately."
+          confirmLabel={
+            lifecycleConfirm.kind === 'template'
+              ? 'Instantiate Role'
+              : lifecycleConfirm.kind === 'clone'
+                ? 'Clone Role'
+                : lifecycleConfirm.kind === 'activate'
+                  ? 'Activate Role'
+                  : lifecycleConfirm.kind === 'deactivate'
+                    ? 'Deactivate Role'
+                    : 'Apply Denial'
+          }
+        />
+      )}
     </div>
   )
 }

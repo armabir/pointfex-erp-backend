@@ -417,9 +417,13 @@ export const erpApi = {
   createRoleFromTemplate: (
     code: string,
     body?: { name?: string; slug?: string; description?: string },
+    mfaCode?: string,
   ) =>
     apiRequest<any>(`/rbac/roles/from-template/${code}`, {
       method: 'POST',
+      headers: mfaCode
+        ? { 'X-MFA-Code': mfaCode, 'X-MFA-Action': 'roles:create', 'X-MFA-Target': code }
+        : undefined,
       body: JSON.stringify(body || {}),
     }),
   getDelegatablePermissions: () =>
@@ -448,20 +452,46 @@ export const erpApi = {
         : undefined,
       body: JSON.stringify(body),
     }),
-  cloneRole: (id: string, body: { name: string; slug?: string; description?: string }) =>
-    apiRequest<any>(`/rbac/roles/${id}/clone`, { method: 'POST', body: JSON.stringify(body) }),
-  activateRole: (id: string, reason?: string) =>
+  cloneRole: (
+    id: string,
+    body: { name: string; slug?: string; description?: string },
+    mfaCode?: string,
+  ) =>
+    apiRequest<any>(`/rbac/roles/${id}/clone`, {
+      method: 'POST',
+      headers: mfaCode
+        ? { 'X-MFA-Code': mfaCode, 'X-MFA-Action': 'roles:update', 'X-MFA-Target': id }
+        : undefined,
+      body: JSON.stringify(body),
+    }),
+  activateRole: (id: string, reason?: string, mfaCode?: string) =>
     apiRequest<any>(`/rbac/roles/${id}/activate`, {
       method: 'PATCH',
+      headers: mfaCode
+        ? { 'X-MFA-Code': mfaCode, 'X-MFA-Action': 'roles:update', 'X-MFA-Target': id }
+        : undefined,
       body: JSON.stringify(reason ? { reason } : {}),
     }),
-  deactivateRole: (id: string, reason?: string) =>
+  deactivateRole: (id: string, reason?: string, mfaCode?: string) =>
     apiRequest<any>(`/rbac/roles/${id}/deactivate`, {
       method: 'PATCH',
+      headers: mfaCode
+        ? { 'X-MFA-Code': mfaCode, 'X-MFA-Action': 'roles:update', 'X-MFA-Target': id }
+        : undefined,
       body: JSON.stringify(reason ? { reason } : {}),
     }),
-  updateRole: (id: string, body: { name?: string; description?: string; isActive?: boolean; wildcards?: string[]; tier?: string }) =>
-    apiRequest<any>(`/rbac/roles/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  updateRole: (
+    id: string,
+    body: { name?: string; description?: string; isActive?: boolean; wildcards?: string[]; tier?: string },
+    mfaCode?: string,
+  ) =>
+    apiRequest<any>(`/rbac/roles/${id}`, {
+      method: 'PATCH',
+      headers: mfaCode
+        ? { 'X-MFA-Code': mfaCode, 'X-MFA-Action': 'roles:update', 'X-MFA-Target': id }
+        : undefined,
+      body: JSON.stringify(body),
+    }),
   deleteRole: (id: string, mfaCode?: string) =>
     apiRequest<any>(`/rbac/roles/${id}`, {
       method: 'DELETE',
@@ -512,13 +542,22 @@ export const erpApi = {
   grantDenial: (
     employeeId: string,
     body: { permissionCode: string; scope?: string; scopeIds?: string[]; reason?: string; expiresAt?: string },
+    mfaCode?: string,
   ) =>
     apiRequest<any>(`/rbac/users/${employeeId}/denials`, {
       method: 'POST',
+      headers: mfaCode
+        ? { 'X-MFA-Code': mfaCode, 'X-MFA-Action': 'permissions:deny_direct', 'X-MFA-Target': employeeId }
+        : undefined,
       body: JSON.stringify(body),
     }),
-  revokeDenial: (denialId: string) =>
-    apiRequest<any>(`/rbac/denials/${denialId}`, { method: 'DELETE' }),
+  revokeDenial: (denialId: string, mfaCode?: string) =>
+    apiRequest<any>(`/rbac/denials/${denialId}`, {
+      method: 'DELETE',
+      headers: mfaCode
+        ? { 'X-MFA-Code': mfaCode, 'X-MFA-Action': 'permissions:deny_direct', 'X-MFA-Target': denialId }
+        : undefined,
+    }),
   // Delegations Engine
   listMyDelegations: () => apiRequest<{ created: any[]; received: any[] }>('/rbac/delegations/mine'),
   listAllDelegations: () => apiRequest<any[]>('/rbac/delegations'),
@@ -1042,7 +1081,7 @@ export const erpApi = {
       method: 'PATCH',
       headers: {
         'X-MFA-Code': mfaCode,
-        'X-MFA-Action': 'rbac:manage_roles',
+        'X-MFA-Action': 'roles:update',
         'X-MFA-Target': roleId,
       },
       body: JSON.stringify({ tier, reason }),

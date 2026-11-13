@@ -434,6 +434,22 @@ export function runFrontendSuite(): Array<{ name: string; pass: boolean }> {
       clientSource.includes("'X-MFA-Action': 'roles:delete'"),
       "client.ts deleteRole must send X-MFA-Action: roles:delete",
     )
+    assert.ok(
+      clientSource.includes("cloneRole: ("),
+      "client.ts must define cloneRole with optional mfaCode",
+    )
+    assert.ok(
+      clientSource.includes("activateRole: ("),
+      "client.ts must define activateRole with optional mfaCode",
+    )
+    assert.ok(
+      clientSource.includes("deactivateRole: ("),
+      "client.ts must define deactivateRole with optional mfaCode",
+    )
+    assert.ok(
+      clientSource.includes("updateRole: ("),
+      "client.ts must define updateRole with optional mfaCode",
+    )
   })
 
   test('auth preservation: AppContext and client protect reset-password tokens and routes', () => {

@@ -171,7 +171,7 @@ export function PermissionCartBuilder({
 
   const plainSummary = useMemo(() => buildRolePlainSummary(selectedCodes), [selectedCodes])
 
-  const executeCreateRole = async () => {
+  const executeCreateRole = async (mfaCode?: string) => {
     setIsSubmitting(true)
     try {
       const scopeNote = `Default scope: ${defaultScope}.`
@@ -181,7 +181,7 @@ export function PermissionCartBuilder({
         description: desc,
         permissionCodes: Array.from(selectedCodes),
         wildcards: Array.from(selectedWildcards),
-      })
+      }, mfaCode)
       setIsConfirmOpen(false)
       setRoleName('')
       setRoleDesc('')
@@ -579,7 +579,7 @@ export function PermissionCartBuilder({
       <SecurityConfirmModal
         isOpen={isConfirmOpen}
         onClose={() => setIsConfirmOpen(false)}
-        onConfirm={() => void executeCreateRole()}
+        onConfirm={(_phrase, _pwd, mfaCode) => void executeCreateRole(mfaCode)}
         isSubmitting={isSubmitting}
         isCritical={selectedCriticalCodes.length > 0}
         requirePassword={selectedCriticalCodes.length > 0}
