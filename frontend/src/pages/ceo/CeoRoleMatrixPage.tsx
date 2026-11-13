@@ -80,6 +80,13 @@ type MatrixConfirmState =
   | { kind: 'save_permissions'; role: RoleItem; codes: string[] }
   | { kind: 'delete_role'; role: RoleItem }
   | {
+      kind: 'create_role'
+      name: string
+      description?: string
+      permissionCodes: string[]
+      tier: string
+    }
+  | {
       kind: 'assign_role'
       employeeId: string
       employeeName: string
@@ -129,7 +136,6 @@ export function CeoRoleMatrixPage() {
   const [newRoleDesc, setNewRoleDesc] = useState('')
   const [newRolePresetId, setNewRolePresetId] = useState('')
   const [newRoleTier, setNewRoleTier] = useState<string>('STAFF')
-  const [newRoleMfaCode, setNewRoleMfaCode] = useState('')
 
   // Assign Role Modal
   const [assignTargetUser, setAssignTargetUser] = useState<{
@@ -346,14 +352,9 @@ export function CeoRoleMatrixPage() {
     })
   }
 
-  const handleQuickCreateRole = async (e: React.FormEvent) => {
+  const handleQuickCreateRole = (e: React.FormEvent) => {
     e.preventDefault()
     if (!newRoleName.trim()) return
-    const cleanCode = newRoleMfaCode.replace(/\D/g, '').slice(0, 6)
-    if (cleanCode.length !== 6) {
-      showToast('Enter your 6-digit authenticator code to create a role.', 'warning')
-      return
-    }
 
     const presetPerms = newRolePresetId
       ? roles
@@ -361,25 +362,14 @@ export function CeoRoleMatrixPage() {
           ?.rolePermissions.map((rp) => rp.permission.code) || []
       : []
 
-    try {
-      const created = await erpApi.createRole({
-        name: newRoleName.trim(),
-        description: newRoleDesc.trim() || undefined,
-        permissionCodes: presetPerms,
-        tier: newRoleTier,
-      }, cleanCode)
-      setIsCreateOpen(false)
-      setNewRoleName('')
-      setNewRoleDesc('')
-      setNewRolePresetId('')
-      setNewRoleTier('STAFF')
-      setNewRoleMfaCode('')
-      await loadRbacData(false)
-      if (created?.id) setSelectedRoleId(created.id)
-      showToast(`New role "${created.name}" (${newRoleTier}) successfully saved to the system.`, 'success')
-    } catch (err: any) {
-      showToast(err?.message || 'Unable to save new role', 'error')
-    }
+    setIsCreateOpen(false)
+    setMatrixConfirm({
+      kind: 'create_role',
+      name: newRoleName.trim(),
+      description: newRoleDesc.trim() || undefined,
+      permissionCodes: presetPerms,
+      tier: newRoleTier,
+    })
   }
 
   const handleDeleteRole = (role: RoleItem) => {
@@ -438,6 +428,25 @@ export function CeoRoleMatrixPage() {
       } else if (matrixConfirm.kind === 'delete_role') {
         await erpApi.deleteRole(matrixConfirm.role.id, mfaCode)
         showToast(`Removed custom role "${matrixConfirm.role.name}" from the system.`, 'info')
+      } else if (matrixConfirm.kind === 'create_role') {
+        const created = await erpApi.createRole(
+          {
+            name: matrixConfirm.name,
+            description: matrixConfirm.description,
+            permissionCodes: matrixConfirm.permissionCodes,
+            tier: matrixConfirm.tier,
+          },
+          mfaCode,
+        )
+        setNewRoleName('')
+        setNewRoleDesc('')
+        setNewRolePresetId('')
+        setNewRoleTier('STAFF')
+        if (created?.id) setSelectedRoleId(created.id)
+        showToast(
+          `New role "${created.name}" (${matrixConfirm.tier}) successfully saved to the system.`,
+          'success',
+        )
       } else if (matrixConfirm.kind === 'assign_role') {
         await erpApi.assignRoleToEmployee(matrixConfirm.employeeId, {
           roleId: matrixConfirm.roleId,
@@ -1158,26 +1167,6 @@ export function CeoRoleMatrixPage() {
               ))}
             </select>
           </div>
-
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Authenticator Code (6-digit, single-use) *
-            </label>
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              required
-              value={newRoleMfaCode.replace(/\D/g, '').slice(0, 6)}
-              onChange={(e) => setNewRoleMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="000000"
-              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none font-mono tracking-widest text-center text-base"
-            />
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-              CEO governance action — requires a fresh code from your authenticator app.
-            </p>
-          </div>
         </form>
       </Modal>
 
@@ -1288,39 +1277,45 @@ export function CeoRoleMatrixPage() {
               ? 'Confirm Role Capability Update'
               : matrixConfirm.kind === 'delete_role'
                 ? 'Confirm Custom Role Deletion'
-                : matrixConfirm.kind === 'assign_role'
-                  ? 'Confirm Organizational Role Assignment'
-                  : matrixConfirm.kind === 'revoke_role'
-                    ? 'Confirm Revoke Organizational Role'
-                    : matrixConfirm.kind === 'approve_request'
-                      ? 'Confirm Approve Role Change'
-                      : 'Confirm Reject Role Change'
+                : matrixConfirm.kind === 'create_role'
+                  ? 'Confirm Create New Role'
+                  : matrixConfirm.kind === 'assign_role'
+                    ? 'Confirm Organizational Role Assignment'
+                    : matrixConfirm.kind === 'revoke_role'
+                      ? 'Confirm Revoke Organizational Role'
+                      : matrixConfirm.kind === 'approve_request'
+                        ? 'Confirm Approve Role Change'
+                        : 'Confirm Reject Role Change'
           }
           details={
             matrixConfirm.kind === 'save_permissions'
               ? `Update capabilities attached to "${matrixConfirm.role.name}" (${matrixConfirm.codes.length} enabled capabilities).`
               : matrixConfirm.kind === 'delete_role'
                 ? `Permanently delete custom role "${matrixConfirm.role.name}". Employees holding this role will lose its permissions immediately.`
-                : matrixConfirm.kind === 'assign_role'
-                  ? `Assign "${matrixConfirm.roleName}" access to ${matrixConfirm.employeeName}. Takes effect immediately.`
-                  : matrixConfirm.kind === 'revoke_role'
-                    ? `Remove "${matrixConfirm.roleName}" access from ${matrixConfirm.employeeName}. Takes effect immediately.`
-                    : matrixConfirm.kind === 'approve_request'
-                      ? `Approve and grant "${matrixConfirm.roleName}" access to ${matrixConfirm.targetName}.`
-                      : `Decline "${matrixConfirm.roleName}" access request for ${matrixConfirm.targetName}.`
+                : matrixConfirm.kind === 'create_role'
+                  ? `Create new organizational role "${matrixConfirm.name}" (${matrixConfirm.tier} tier) with ${matrixConfirm.permissionCodes.length} initial capabilities.`
+                  : matrixConfirm.kind === 'assign_role'
+                    ? `Assign "${matrixConfirm.roleName}" access to ${matrixConfirm.employeeName}. Takes effect immediately.`
+                    : matrixConfirm.kind === 'revoke_role'
+                      ? `Remove "${matrixConfirm.roleName}" access from ${matrixConfirm.employeeName}. Takes effect immediately.`
+                      : matrixConfirm.kind === 'approve_request'
+                        ? `Approve and grant "${matrixConfirm.roleName}" access to ${matrixConfirm.targetName}.`
+                        : `Decline "${matrixConfirm.roleName}" access request for ${matrixConfirm.targetName}.`
           }
           confirmLabel={
             matrixConfirm.kind === 'save_permissions'
               ? 'Save Capabilities (Immediate)'
               : matrixConfirm.kind === 'delete_role'
                 ? 'Delete Custom Role'
-                : matrixConfirm.kind === 'assign_role'
-                  ? 'Assign Role Immediately'
-                  : matrixConfirm.kind === 'revoke_role'
-                    ? 'Revoke Role Immediately'
-                    : matrixConfirm.kind === 'approve_request'
-                      ? 'Approve Change'
-                      : 'Reject Request'
+                : matrixConfirm.kind === 'create_role'
+                  ? 'Create Role Immediately'
+                  : matrixConfirm.kind === 'assign_role'
+                    ? 'Assign Role Immediately'
+                    : matrixConfirm.kind === 'revoke_role'
+                      ? 'Revoke Role Immediately'
+                      : matrixConfirm.kind === 'approve_request'
+                        ? 'Approve Change'
+                        : 'Reject Request'
           }
         />
       )}
