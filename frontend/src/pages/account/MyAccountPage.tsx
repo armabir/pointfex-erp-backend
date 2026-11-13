@@ -5,7 +5,6 @@ import {
   Link2,
   Lock,
   LogOut,
-  Palette,
   ShieldCheck,
   Trash2,
   User as UserIcon,
@@ -32,7 +31,7 @@ function formatDhakaDateTime(iso?: string | null): string {
 }
 
 export function MyAccountPage() {
-  const { currentUser, theme, toggleTheme, showToast, updateUser, refreshData, logout } = useApp()
+  const { currentUser, showToast, updateUser, refreshData, logout } = useApp()
 
   const [bio, setBio] = useState(currentUser?.bio || '')
   const [timezone, setTimezone] = useState(currentUser?.timezone || 'Asia/Dhaka (UTC+6)')
@@ -61,11 +60,6 @@ export function MyAccountPage() {
     hasPassword: boolean
     mfaEnabled: boolean
   } | null>(null)
-
-  const [density, setDensity] = useState<'comfortable' | 'compact'>(() => {
-    const key = currentUser?.id ? `pointfex_density_${currentUser.id}` : 'pointfex_density'
-    return (localStorage.getItem(key) as 'comfortable' | 'compact') || 'comfortable'
-  })
 
   const [mfaEnrollData, setMfaEnrollData] = useState<{ base32Secret?: string } | null>(null)
   const [mfaVerifyCode, setMfaVerifyCode] = useState('')
@@ -182,13 +176,6 @@ export function MyAccountPage() {
     } catch (err: any) {
       showToast(err?.message || 'Invalid 6-digit MFA code.', 'error')
     }
-  }
-
-  const handleDensityChange = (next: 'comfortable' | 'compact') => {
-    setDensity(next)
-    const key = currentUser?.id ? `pointfex_density_${currentUser.id}` : 'pointfex_density'
-    localStorage.setItem(key, next)
-    showToast(`Display density set to ${next}.`, 'info')
   }
 
   const googleLink = sessionsData?.externalIdentities.find((x) => x.provider === 'google')
@@ -501,35 +488,6 @@ export function MyAccountPage() {
               </div>
             ))
           )}
-        </div>
-      </Card>
-
-      {/* Theme & Density */}
-      <Card className="p-5 space-y-3">
-        <h2 className="text-sm font-semibold text-[var(--text)] flex items-center gap-2">
-          <Palette className="w-4 h-4 text-[var(--primary)]" />
-          Theme &amp; Density
-        </h2>
-        <div className="flex flex-wrap items-center gap-3 text-xs">
-          <Button type="button" size="sm" variant="secondary" onClick={toggleTheme}>
-            Theme: {theme === 'dark' ? 'Dark' : 'Light'} (switch)
-          </Button>
-          <div className="inline-flex rounded-lg border border-[var(--border)] overflow-hidden">
-            {(['comfortable', 'compact'] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => handleDensityChange(mode)}
-                className={`px-3 py-1.5 capitalize cursor-pointer ${
-                  density === mode
-                    ? 'bg-[var(--primary)] text-white'
-                    : 'bg-[var(--surface)] text-[var(--text)]'
-                }`}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
         </div>
       </Card>
 

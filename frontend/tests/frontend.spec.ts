@@ -403,7 +403,7 @@ export function runFrontendSuite(): Array<{ name: string; pass: boolean }> {
       'MFA Status',
       'MfaRecoveryCodesCard',
       'Active Sessions',
-      'Theme &amp; Density',
+      'AdditionalGrantedAccessCard',
     ]) {
       assert.ok(accountSource.includes(section), `MyAccountPage missing "${section}"`)
     }
@@ -411,6 +411,29 @@ export function runFrontendSuite(): Array<{ name: string; pass: boolean }> {
     assert.equal(canAccessRoute('login-access', ['tasks:read_own']), false)
     assert.equal(canAccessRoute('login-access', ['login_allowlist:read']), true)
     assert.equal(canAccessRoute('login-access', ['login_allowlist:manage']), true)
+  })
+
+  test('replaceRolePermissions forwards X-MFA-Code, X-MFA-Action, and X-MFA-Target (CEO role-save bug regression)', () => {
+    const clientSource = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/api/client.ts'),
+      'utf8',
+    )
+    assert.ok(
+      clientSource.includes("'X-MFA-Action': 'roles:update'"),
+      "client.ts replaceRolePermissions must send X-MFA-Action: roles:update",
+    )
+    assert.ok(
+      clientSource.includes("'X-MFA-Action': 'users:assign_role'"),
+      "client.ts assignRoleToEmployee must send X-MFA-Action: users:assign_role",
+    )
+    assert.ok(
+      clientSource.includes("'X-MFA-Action': 'roles:create'"),
+      "client.ts createRole must send X-MFA-Action: roles:create",
+    )
+    assert.ok(
+      clientSource.includes("'X-MFA-Action': 'roles:delete'"),
+      "client.ts deleteRole must send X-MFA-Action: roles:delete",
+    )
   })
 
   test('auth preservation: AppContext and client protect reset-password tokens and routes', () => {

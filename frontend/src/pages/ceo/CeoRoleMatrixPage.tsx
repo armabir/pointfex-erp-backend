@@ -129,6 +129,7 @@ export function CeoRoleMatrixPage() {
   const [newRoleDesc, setNewRoleDesc] = useState('')
   const [newRolePresetId, setNewRolePresetId] = useState('')
   const [newRoleTier, setNewRoleTier] = useState<string>('STAFF')
+  const [newRoleMfaCode, setNewRoleMfaCode] = useState('')
 
   // Assign Role Modal
   const [assignTargetUser, setAssignTargetUser] = useState<{
@@ -348,6 +349,11 @@ export function CeoRoleMatrixPage() {
   const handleQuickCreateRole = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newRoleName.trim()) return
+    const cleanCode = newRoleMfaCode.replace(/\D/g, '').slice(0, 6)
+    if (cleanCode.length !== 6) {
+      showToast('Enter your 6-digit authenticator code to create a role.', 'warning')
+      return
+    }
 
     const presetPerms = newRolePresetId
       ? roles
@@ -361,12 +367,13 @@ export function CeoRoleMatrixPage() {
         description: newRoleDesc.trim() || undefined,
         permissionCodes: presetPerms,
         tier: newRoleTier,
-      })
+      }, cleanCode)
       setIsCreateOpen(false)
       setNewRoleName('')
       setNewRoleDesc('')
       setNewRolePresetId('')
       setNewRoleTier('STAFF')
+      setNewRoleMfaCode('')
       await loadRbacData(false)
       if (created?.id) setSelectedRoleId(created.id)
       showToast(`New role "${created.name}" (${newRoleTier}) successfully saved to the system.`, 'success')
@@ -417,26 +424,26 @@ export function CeoRoleMatrixPage() {
     })
   }
 
-  const executeMatrixConfirm = async (_stepUpPhrase?: string, passwordConfirm?: string) => {
+  const executeMatrixConfirm = async (_stepUpPhrase?: string, _passwordConfirm?: string, mfaCode?: string) => {
     if (!matrixConfirm) return
     setIsConfirmSubmitting(true)
     if (matrixConfirm.kind === 'save_permissions') setIsSaving(true)
     try {
       if (matrixConfirm.kind === 'save_permissions') {
-        await erpApi.replaceRolePermissions(matrixConfirm.role.id, matrixConfirm.codes)
+        await erpApi.replaceRolePermissions(matrixConfirm.role.id, matrixConfirm.codes, mfaCode || '')
         showToast(
           `Role capabilities for "${matrixConfirm.role.name}" successfully saved. (Takes effect immediately)`,
           'success',
         )
       } else if (matrixConfirm.kind === 'delete_role') {
-        await erpApi.deleteRole(matrixConfirm.role.id, passwordConfirm)
+        await erpApi.deleteRole(matrixConfirm.role.id, mfaCode)
         showToast(`Removed custom role "${matrixConfirm.role.name}" from the system.`, 'info')
       } else if (matrixConfirm.kind === 'assign_role') {
         await erpApi.assignRoleToEmployee(matrixConfirm.employeeId, {
           roleId: matrixConfirm.roleId,
           scope: matrixConfirm.scope,
           scopeIds: matrixConfirm.scopeIds,
-        })
+        }, mfaCode)
         setAssignTargetUser(null)
         setAssignRoleId('')
         setAssignScopeIdsRaw('')
@@ -445,19 +452,19 @@ export function CeoRoleMatrixPage() {
           'success',
         )
       } else if (matrixConfirm.kind === 'revoke_role') {
-        await erpApi.revokeRoleFromEmployee(matrixConfirm.employeeId, matrixConfirm.roleId)
+        await erpApi.revokeRoleFromEmployee(matrixConfirm.employeeId, matrixConfirm.roleId, mfaCode)
         showToast(
           `Removed "${matrixConfirm.roleName}" access from ${matrixConfirm.employeeName} immediately.`,
           'info',
         )
       } else if (matrixConfirm.kind === 'approve_request') {
-        await erpApi.approveAccessRequest(matrixConfirm.requestId)
+        await erpApi.approveAccessRequest(matrixConfirm.requestId, { mfaCode })
         showToast(
           `Approved ${matrixConfirm.roleName} role assignment for ${matrixConfirm.targetName}.`,
           'success',
         )
       } else if (matrixConfirm.kind === 'reject_request') {
-        await erpApi.rejectAccessRequest(matrixConfirm.requestId)
+        await erpApi.rejectAccessRequest(matrixConfirm.requestId, { mfaCode })
         showToast(
           `Declined ${matrixConfirm.roleName} request for ${matrixConfirm.targetName}.`,
           'info',
@@ -1150,6 +1157,26 @@ export function CeoRoleMatrixPage() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Authenticator Code (6-digit, single-use) *
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              required
+              value={newRoleMfaCode.replace(/\D/g, '').slice(0, 6)}
+              onChange={(e) => setNewRoleMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="000000"
+              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none font-mono tracking-widest text-center text-base"
+            />
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              CEO governance action — requires a fresh code from your authenticator app.
+            </p>
           </div>
         </form>
       </Modal>

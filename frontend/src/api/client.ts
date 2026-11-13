@@ -429,15 +429,25 @@ export const erpApi = {
   listRoles: () => apiRequest<any[]>('/rbac/roles'),
   getRole: (id: string) => apiRequest<any>(`/rbac/roles/${id}`),
   getRoleVersions: (id: string) => apiRequest<any[]>(`/rbac/roles/${id}/versions`),
-  createRole: (body: {
-    name: string
-    slug?: string
-    description?: string
-    permissionCodes?: string[]
-    wildcards?: string[]
-    includeCritical?: boolean
-    tier?: string
-  }) => apiRequest<any>('/rbac/roles', { method: 'POST', body: JSON.stringify(body) }),
+  createRole: (
+    body: {
+      name: string
+      slug?: string
+      description?: string
+      permissionCodes?: string[]
+      wildcards?: string[]
+      includeCritical?: boolean
+      tier?: string
+    },
+    mfaCode?: string,
+  ) =>
+    apiRequest<any>('/rbac/roles', {
+      method: 'POST',
+      headers: mfaCode
+        ? { 'X-MFA-Code': mfaCode, 'X-MFA-Action': 'roles:create', 'X-MFA-Target': 'new' }
+        : undefined,
+      body: JSON.stringify(body),
+    }),
   cloneRole: (id: string, body: { name: string; slug?: string; description?: string }) =>
     apiRequest<any>(`/rbac/roles/${id}/clone`, { method: 'POST', body: JSON.stringify(body) }),
   activateRole: (id: string, reason?: string) =>
@@ -452,21 +462,23 @@ export const erpApi = {
     }),
   updateRole: (id: string, body: { name?: string; description?: string; isActive?: boolean; wildcards?: string[]; tier?: string }) =>
     apiRequest<any>(`/rbac/roles/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  deleteRole: (id: string, passwordConfirm?: string) =>
+  deleteRole: (id: string, mfaCode?: string) =>
     apiRequest<any>(`/rbac/roles/${id}`, {
       method: 'DELETE',
-      headers: passwordConfirm ? { 'x-password-confirm': passwordConfirm } : undefined,
-      body: passwordConfirm ? JSON.stringify({ passwordConfirm }) : undefined,
+      headers: mfaCode
+        ? { 'X-MFA-Code': mfaCode, 'X-MFA-Action': 'roles:delete', 'X-MFA-Target': id }
+        : undefined,
     }),
   replaceRolePermissions: (
     id: string,
     permissionCodes: string[],
-    wildcards?: string[],
+    mfaCode: string,
     changeReason?: string,
   ) =>
     apiRequest<any>(`/rbac/roles/${id}/permissions`, {
       method: 'PUT',
-      body: JSON.stringify({ permissionCodes, wildcards, changeReason }),
+      headers: { 'X-MFA-Code': mfaCode, 'X-MFA-Action': 'roles:update', 'X-MFA-Target': id },
+      body: JSON.stringify({ permissionCodes, changeReason }),
     }),
   listUserRoleAssignments: (employeeId: string) =>
     apiRequest<any[]>(`/rbac/users/${employeeId}/role-assignments`),
@@ -488,9 +500,13 @@ export const erpApi = {
       expiresAt?: string
       reason?: string
     },
+    mfaCode?: string,
   ) =>
     apiRequest<any>(`/rbac/users/${employeeId}/roles`, {
       method: 'POST',
+      headers: mfaCode
+        ? { 'X-MFA-Code': mfaCode, 'X-MFA-Action': 'users:assign_role', 'X-MFA-Target': employeeId }
+        : undefined,
       body: JSON.stringify(body),
     }),
   grantDenial: (
@@ -596,8 +612,13 @@ export const erpApi = {
   listMySecuritySessions: () => apiRequest<any[]>('/rbac/security-sessions/mine'),
   revokeSecuritySession: (id: string) =>
     apiRequest<any>(`/rbac/security-sessions/${id}/revoke`, { method: 'POST', body: '{}' }),
-  revokeRoleFromEmployee: (employeeId: string, roleId: string) =>
-    apiRequest<any>(`/rbac/users/${employeeId}/roles/${roleId}`, { method: 'DELETE' }),
+  revokeRoleFromEmployee: (employeeId: string, roleId: string, mfaCode?: string) =>
+    apiRequest<any>(`/rbac/users/${employeeId}/roles/${roleId}`, {
+      method: 'DELETE',
+      headers: mfaCode
+        ? { 'X-MFA-Code': mfaCode, 'X-MFA-Action': 'users:assign_role', 'X-MFA-Target': employeeId }
+        : undefined,
+    }),
   grantDirectPermission: (
     employeeId: string,
     body: { permissionCode?: string; permissionId?: string; expiresAt?: string; reason?: string },
