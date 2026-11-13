@@ -454,4 +454,66 @@ describe('Phase 4B: Always-MFA for Sensitive & Executive Actions', () => {
     )
     expect(meta).toBe('roles:create')
   })
+
+  it('PUT /rbac/roles/:id/permissions requires fresh MFA for roles:update (root cause regression)', () => {
+    // Reproduces: CEO clicking "Save Changes" on Role Builder gets MFA_CODE_REQUIRED
+    // because replaceRolePermissions had no X-MFA-Code forwarding in the frontend client.
+    const { RbacController } = require('./rbac.controller')
+    const { FRESH_MFA_ACTION_KEY } = require('../common/requires-fresh-mfa.decorator')
+    const meta = Reflect.getMetadata(
+      FRESH_MFA_ACTION_KEY,
+      RbacController.prototype.replaceRolePermissions,
+    )
+    expect(meta).toBe('roles:update')
+  })
+
+  it('missing X-MFA-Code on roles:update returns MFA_CODE_REQUIRED, valid code passes', async () => {
+    const prisma: any = createMockPrisma()
+    const service = new FreshMfaService(prisma)
+
+    // Without a code — must reject with the same error the CEO saw
+    await expect(
+      service.verifyFreshMfa({
+        actorId: 'emp_test_01',
+        actionKey: 'roles:update',
+        targetId: 'role_abc',
+        code: '',
+      }),
+    ).rejects.toMatchObject({ response: { code: 'MFA_CODE_REQUIRED', actionKey: 'roles:update' } })
+
+    // With a valid fresh code — must pass
+    const validCode = generateTotpCode(secretHex, 0)
+    const result = await service.verifyFreshMfa({
+      actorId: 'emp_test_01',
+      actionKey: 'roles:update',
+      targetId: 'role_abc',
+      code: validCode,
+      boundActionHeader: 'roles:update',
+      boundTargetHeader: 'role_abc',
+    })
+    expect(result.actionKey).toBe('roles:update')
+    expect(result.targetId).toBe('role_abc')
+  })
+
+  it('guard reads X-MFA-Code header case-insensitively', async () => {
+    // The guard uses req.headers['x-mfa-code'] (lowercase) which is how Node/NestJS normalises headers
+    const prisma: any = createMockPrisma()
+    const service = new FreshMfaService(prisma)
+    // Simulate a request where the browser sent X-MFA-Code (mixed-case); Node lowercases it
+    const lowerCode = generateTotpCode(secretHex, 0)
+    const result = await service.verifyFreshMfa({
+      actorId: 'emp_test_01',
+      actionKey: 'roles:update',
+      targetId: 'role_abc2',
+      code: lowerCode, // guard already extracts req.headers['x-mfa-code'] (always lowercase)
+    })
+    expect(result.actionKey).toBe('roles:update')
+  })
+
+  it('PM/developer role does not hold roles:update permission (tier ceiling enforced)', () => {
+    const { SENSITIVE_ACTION_REGISTRY } = require('./sensitive-actions')
+    const entry = SENSITIVE_ACTION_REGISTRY.find((e: any) => e.actionKey === 'roles:update')
+    expect(entry).toBeDefined()
+    expect(entry.mfaRequired).toBe(true)
+  })
 })
