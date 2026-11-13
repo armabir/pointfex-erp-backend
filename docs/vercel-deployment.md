@@ -69,3 +69,4 @@ Tasks executed on every sweep:
 3. Auto-unfreezes accounts whose `frozenUntil` has passed.
 4. Cleans up expired sessions and refresh tokens.
 5. Verifies the SHA-256 audit log chain tip integrity.
+

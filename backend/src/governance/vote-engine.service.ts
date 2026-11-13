@@ -155,7 +155,7 @@ export class VoteEngineService {
       })
 
       const tally = await this.getTally(requestId, req.requesterId, req.status, req.voteDeadline)
-      let resolvedStatus: string = String(req.status)
+      let resolvedStatus: string = req.status
 
       // Check win or impossible conditions
       if (tally.approvals >= tally.threshold) {
